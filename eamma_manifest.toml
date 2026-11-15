@@ -1,0 +1,18 @@
+# EA Sports MMA (Xbox 360) - ReXGlue manifest.
+# default.xex is a small launcher; the game is MMADLLzf.xex.dll, loaded with XexLoadImage.
+
+[project]
+name = "eamma"
+sdk_version = "0.10.0"
+game_root = "assets"
+
+[entrypoint]
+file_path = "assets/default.xex"
+out_directory_path = "generated/default"
+includes = ["config/functions_default.toml"]
+
+[[modules]]
+guest_path = "mmadllzf.xex.dll"
+file_path = "assets/MMADLLzf.xex.dll"
+out_directory_path = "generated/mmadllzf_xex"
+includes = ["config/functions_dll.toml"]

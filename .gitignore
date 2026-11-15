@@ -1,0 +1,22 @@
+# Whitelist: ignore everything, then allow only project sources and docs.
+# Never commit game assets (assets/, mods/), generated code (rebuilt from the
+# XEX by build.bat), build output, saves or logs.
+/*
+!/.gitignore
+!/.gitattributes
+
+!/CMakeLists.txt
+!/CMakePresets.json
+!/eamma_manifest.toml
+!/build.bat
+!/env.bat
+!/play.bat
+!/*.md
+
+!/src/
+!/config/
+!/mods_src/
+
+!/tools/
+/tools/__pycache__/
+*.pyc

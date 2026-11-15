@@ -1,0 +1,3 @@
+# Function entry points the analyzer misses in default.xex (launcher). See NOTES.md.
+[functions]
+0x8201442C = { name = "sub_8201442C" }  # codegen: branch target not in any function
