@@ -161,6 +161,12 @@ bool BCFormatFromGuestByte(u32 guest_format, plume::RenderFormat &out) {
   case xe::TextureFormat::k_DXT4_5:
     out = plume::RenderFormat::BC3_UNORM;
     return true;
+  case xe::TextureFormat::k_DXN:  // EA MMA normal maps
+    out = plume::RenderFormat::BC5_UNORM;
+    return true;
+  case xe::TextureFormat::k_DXT5A:
+    out = plume::RenderFormat::BC4_UNORM;
+    return true;
   case xe::TextureFormat::k_8_8_8_8:
     out = plume::RenderFormat::R8G8B8A8_UNORM;
     return true;

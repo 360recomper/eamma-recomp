@@ -583,7 +583,17 @@ void ApplyFetchSwizzle(GuestTexture *tex, const xe::xe_gpu_texture_fetch_t &fetc
   // rewriting its descriptor while earlier frames on the GPU read it is what NVIDIA objects to.
   // A different swizzle (another texture loaded into the same memory) gets a new view, back to
   // plain RGBA included.
-  const u32 swizzle = fetch.swizzle;
+  u32 swizzle = fetch.swizzle;
+  // EA MMA: two- and one-channel block formats read as Xenos returns them (Xenia's host swizzles):
+  // k_DXN (BC5) gives R G G G, k_DXT5A (BC4) gives R R R R, where the host formats give 0 / 1.
+  if (fetch.format == xe::TextureFormat::k_DXN || fetch.format == xe::TextureFormat::k_DXT5A) {
+    const u32 fill = fetch.format == xe::TextureFormat::k_DXN ? 1u : 0u;
+    for (u32 c = 0; c < 4; ++c) {
+      const u32 src = (swizzle >> (3 * c)) & 7u;
+      if (src <= 3u && src > fill)
+        swizzle = (swizzle & ~(7u << (3 * c))) | (fill << (3 * c));
+    }
+  }
   if (swizzle == tex->viewSwizzle || !tex->texture ||
       tex->format == plume::RenderFormat::UNKNOWN)
     return;
@@ -679,9 +689,12 @@ GuestTexture *GetOrCreateNativeMirror(u32 guest_va, u32 name_va) {
     return nullptr;
   }
 
+  // EA MMA: also k_DXN (two-channel normal maps, BC5) and k_DXT5A (one channel, BC4).
   const bool dxt = (fetch.format == xe::TextureFormat::k_DXT1 ||
                     fetch.format == xe::TextureFormat::k_DXT2_3 ||
-                    fetch.format == xe::TextureFormat::k_DXT4_5);
+                    fetch.format == xe::TextureFormat::k_DXT4_5 ||
+                    fetch.format == xe::TextureFormat::k_DXN ||
+                    fetch.format == xe::TextureFormat::k_DXT5A);
   // Uncompressed k_8_8_8_8 (color ramps / UI atlases BD stores raw, e.g. the
   // cloud sky LUT dg03_cbr01). 2D only: cube/volume assume DXT blocks.
   const bool rgba8 = fetch.format == xe::TextureFormat::k_8_8_8_8 &&
