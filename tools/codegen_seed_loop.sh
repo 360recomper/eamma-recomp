@@ -2,7 +2,7 @@
 # Run codegen; while it fails on "target not in any function", seed each target in the
 export LC_ALL=C.UTF-8
 # functions file of the module that failed, then retry. Usage: tools/codegen_seed_loop.sh [rounds]
-SDK=/e/ClaudeGame/UFC-rexglue-sdk-nightly/out/install/win-amd64
+SDK=/e/ClaudeGame/EAMMA-rexglue-sdk/out/install/win-amd64
 cd "$(dirname "$0")/.."
 for i in $(seq 1 ${1:-30}); do
   "$SDK/bin/rexglue.exe" codegen eamma_manifest.toml > codegen.log 2>&1 && { echo "round $i: codegen ok"; exit 0; }

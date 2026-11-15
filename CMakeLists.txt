@@ -23,7 +23,7 @@ endif()
 
 rexglue_setup_target(eamma GPU_PLUGINS xenos)
 
-# Guest-import stubs the SDK lacks, linked into the game DLL (target from generated/default/dll_targets.cmake).
+# Diagnostics linked into the game DLL (camera imports now come from the EA MMA SDK copy) (target from generated/default/dll_targets.cmake).
 if(TARGET eamma_MMADLLzf_xex)
-    target_sources(eamma_MMADLLzf_xex PRIVATE src/eamma_usbcam.cpp src/eamma_swap_trace.cpp)
+    target_sources(eamma_MMADLLzf_xex PRIVATE src/eamma_swap_trace.cpp)
 endif()
