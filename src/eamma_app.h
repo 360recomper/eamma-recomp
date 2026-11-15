@@ -50,5 +50,12 @@ class EammaApp : public rex::ReXApp {
       config.graphics = rex::system::LoadGpuPlugin("xenos", REXCVAR_GET(gpu_backend));
       if (!config.graphics) config.gpu_plugin = "xenos";
     }
+    // Like UFC3: the game samples textures through fetch constants typed "invalid" (first boot:
+    // 467k warnings in 100 s for one real texture, 84024800 04AB3054 ...). The 360 samples them
+    // anyway; the emulator default treats them as unbound, and the warning spam alone slowed the
+    // boot. The flag lives in the GPU plugin, so set it after the plugin is loaded.
+    if (!rex::cvar::SetFlagByName("gpu_allow_invalid_fetch_constants", "true")) {
+      REXLOG_WARN("could not enable gpu_allow_invalid_fetch_constants");
+    }
   }
 };

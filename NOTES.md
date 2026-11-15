@@ -23,7 +23,18 @@ same SDK build (`E:\ClaudeGame\UFC-rexglue-sdk-nightly`, used read-only), `env.b
 GPU plugin load). UFC's `gpu_allow_invalid_fetch_constants` (a Yuke's engine fix) is NOT set.
 
 ## Run log
-(see below the table: newest last)
+- 2026-11-14 codegen: 3 analysis seeds (1 launcher, 2 DLL); DLL function 0x88709D38 is a 1.5 MB C++ file (over max_file_size_bytes, compiles fine).
+- Link: DLL imports XUsbcam* (Live Vision camera), not in the SDK -> `src/eamma_usbcam.cpp` "no camera" stubs in the DLL target.
+- Boot 1: launcher's LoadLibrary("MMADLLzf.xex.dll") loads `\Device\Harddisk0\Partition1\MMADLLzf.xex.dll`; the generated
+  registry keys the host DLL only as `mmadllzf.xex.dll`, so it was never wired and DllMain (0x8832E2B8) died "not in function
+  table". Fix: `OnPostLoadXexImage` registers the device-path alias (`src/eamma_app.h`). Don't seed 0x88336F48: it was this, not a missing seed.
+- Boot 2: first real unregistered call 0x888A01E8 (lr 0x884D4658); seeded with all 310 static candidates from find_indirect_targets.py.
+- Boot 3: no more unregistered calls in 2 min. 467k "invalid fetch constant" warnings in 100 s -> `gpu_allow_invalid_fetch_constants` on (as UFC).
+- Boot 4 (120 s, scripted START/A taps): game runs, creates profile saves (MMA_PROFILE_00 / MMA_FIGHTERS_00), but the window stays black.
+  Every few frames the CPU reads back a resolve (2 MB + 3 mips, 0x079A3000 / 0x0D0E1000 / 0x0DA49000 ...) and each 2 MB readback
+  takes 2.2-3.5 s (`readback_resolve=ondemand`), so the game crawls far under 1 fps. Next: A/B `readback_resolve=fast` / `none`,
+  find what the 2 MB readback is (likely a CPU-side luminance/exposure or a UI capture), and test runs that don't take over the desktop.
+- Not reached yet: menus, a fight.
 
 ## Seeded functions
 Every entry in `config\functions_default.toml` (launcher) and `config\functions_dll.toml` (game).
