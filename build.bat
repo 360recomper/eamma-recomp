@@ -11,10 +11,14 @@ if not exist assets\default.xex (
   echo assets\default.xex missing - assets\ is a junction to E:\ClaudeGame\EAMMA-extract
   exit /b 1
 )
-rem build.bat native / nonative: compile the native renderer into the game DLL or not (kept in the
-rem CMake cache). Hooks stay off until src\native\ufc_d3d_names.h holds EA MMA's map (NATIVE-PLAN.md EN-1).
+rem build.bat native / census / nonative (kept in the CMake cache):
+rem   native   = the native renderer in the game DLL (run with --eamma_renderer=native; the default
+rem              stays emulated). Needs the shader cache: python -I tools\nr_build_shader_cache.py
+rem   census   = the EN-3 D3D call census instead of the renderer (--eamma_d3d_census=true)
+rem   nonative = neither
 set "NATIVE_ARG="
-if /i "%~1"=="native" set "NATIVE_ARG=-DEAMMA_NATIVE_RENDERER=ON"
+if /i "%~1"=="native" set "NATIVE_ARG=-DEAMMA_NATIVE_RENDERER=ON -DEAMMA_NATIVE_HOOKS=ON -DEAMMA_NATIVE_CENSUS=OFF"
+if /i "%~1"=="census" set "NATIVE_ARG=-DEAMMA_NATIVE_RENDERER=ON -DEAMMA_NATIVE_HOOKS=OFF -DEAMMA_NATIVE_CENSUS=ON"
 if /i "%~1"=="nonative" set "NATIVE_ARG=-DEAMMA_NATIVE_RENDERER=OFF"
 "%SDK%\bin\rexglue.exe" codegen eamma_manifest.toml || exit /b 1
 cmake --preset win-amd64-relwithdebinfo -DCMAKE_PREFIX_PATH="%SDK%" -Drexglue_DIR="%SDK%\lib\cmake\rexglue" -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O2 -DNDEBUG" %NATIVE_ARG% || exit /b 1

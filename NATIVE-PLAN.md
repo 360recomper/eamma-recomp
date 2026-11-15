@@ -1,6 +1,6 @@
 # EA Sports MMA - native renderer plan
 
-Status 2026-11-15 (branch `native`): EN-0 to EN-4 done; next is EN-5 (device, present, menus). See "Progress" at the end. Source: `E:\ClaudeGame\UFC-native\docs\NATIVE-RENDERER-GUIDE.md`
+Status 2026-11-15 (branch `native`): EN-0 to EN-5 done: menus and fights render natively. Next: shading A/B (Week 2). See "Progress" at the end. Source: `E:\ClaudeGame\UFC-native\docs\NATIVE-RENDERER-GUIDE.md`
 ("the guide"; chapter numbers below are its chapters). Port **UFC's tree** (`E:\ClaudeGame\UFC Recomp`, native code in
 `src/reblue/` + `src/native/`), not SvR's, as the guide says (ch. 1). Written 2026-11-14 while this tree first reached a fight on
 the emulated renderer (NOTES.md).
@@ -148,3 +148,9 @@ junction to the only copy of the disc extract - never delete or clean recursivel
   EN-5 list: (1) where the game's shader constants live (no ConstantF calls), (2) integer loop constants for
   light shafts, (3) present on Swap (no Present), (4) app bridge + `eamma_command_buffers=false` with native,
   (5) audit Blue Dragon guest addresses in generic code (Progress, EN-2).
+- **EN-5 done** (`FINDINGS-en5-native.md`). Movies, menus, loading, fighter select and fights render on the native
+  renderer (`build.bat native`, `--eamma_renderer=native`). Seven fixes: app bridge to the DLL, DrawVerticesUP,
+  predicated tiling, DEC3N normals, GPU-written shader constants (GpuLoadShaderConstantF4Pointer /
+  GpuBeginShaderConstantF4), reversed-Z depth flip in the vertex shader, DXN/DXT5A normal maps.
+  Open: skin shading and a menu halo differ from emulated; light shafts (integer constants); A/B the eager
+  write-back; speed unmeasured.
