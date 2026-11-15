@@ -50,11 +50,13 @@ REXCVAR_DEFINE_BOOL(eamma_native_writeback_gone, false, "eamma",
                     "gone to another guest allocation (pages still unchanged only). The CAF editor's "
                     "face needs pixels to survive that (run nrb4c shows a face with it, wrong colours; "
                     "without it the face is black), but it also lands old pixels in new textures");
-REXCVAR_DEFINE_INT32(eamma_native_wb_eager_frames, 8, "eamma",
+REXCVAR_DEFINE_INT32(eamma_native_wb_eager_frames, -1, "eamma",
                      "EA MMA (EN-5): write each resolve back to guest memory right after it, as the "
                      "emulated readback_resolve=smart does, unless the same rect was resolved every frame "
-                     "for this many frames (then it waits for a reader, as UFC). EA's boot stalls with "
-                     "on-demand write-back alone. -1 = off (UFC behaviour)")
+                     "for this many frames (then it waits for a reader, as UFC). Added for a wrong "
+                     "diagnosis (the white boot screen was the undrawn movie quad, NATIVE-ISSUES C1); "
+                     "boot, menus and fights are the same without it (B7, run n43nowb). -1 = off (UFC "
+                     "behaviour, default)")
     .range(-1, 1000000);
 REXCVAR_DEFINE_INT32(eamma_native_wb_dump, 0, "eamma",
                      "Dev (NR-10g): dump this many resolve write-back jobs (level 0, 512 px or wider) to "

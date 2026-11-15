@@ -20,7 +20,7 @@ still differs from emulated. Details per step: `FINDINGS-en1..en5-*.md`, plan: `
 | B4 | BeginTiling clear always clears depth+stencil and clears colour when a colour pointer is given; the real Flags semantics were not decoded | hooks/draw.cpp EammaBeginTilingObserved |
 | B5 | DEC3N decode returns w = 0 like the other packed-normal paths; a shader using .w of a normal would differ. Checked: none of the 418 shaders reads it | shader_common.h |
 | B6 | DXN/DXT5A channel fill copied from Xenia's table, not checked against the game | native_texture_mirror.cpp |
-| B7 | Eager resolve write-back (`eamma_native_wb_eager_frames`, default 8) is on but was added for a wrong diagnosis (C1); costs a GPU sync per new resolve; may hide or cause timing differences | ufc_resolve_writeback.cpp |
+| B7 | ~~Eager resolve write-back on by default~~ **Off by default now** (`eamma_native_wb_eager_frames=-1`): run n43nowb shows boot, menus, loading, fight and highlights the same without it; the switch stays for A/B | ufc_resolve_writeback.cpp |
 | B8 | The guest-memory reads in the draw log use TranslatePhysical; earlier `bd::mem::try_load` on the 0xA... view returned 0 silently and misled a diagnosis (C3) | ufc_draw_log.cpp |
 | B9 | `src/native/ufc_d3d.h` / `gpu/d3d.h` offsets: only VS/PS/decl and the recording CB were proven at run time; front/back buffer, ring guarantee, register-shadow blocks (+0x2880..) are assumed from UFC/SvR. +0x294C (VTE) and +0x29C0 (pixel centre) now checked against EA's setters | FINDINGS-en1-d3d-map.md section 7 |
 
