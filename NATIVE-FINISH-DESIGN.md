@@ -79,6 +79,9 @@ native-renderer project), `LAPTOP-DISK-NOTE.md`, and UFC's `tools/nr_farm_job.py
   sessions queue jobs and keep doing static work instead of blocking on each 2-4 minute run. Runs that need more than
   1x (WP2 at 1.5x/2x/3x, the WP8 ladder) and anything timing-critical on the reference GPU stay on Chi.
 
+**Status 2026-11-15: done.** Tools committed (9cd0ebf); the laptop runner runs `eamma-*` jobs (last after ufc,
+rrxx, svr07); eamma-lap-boot native + emulated both ran boot -> fight -> results on the laptop with no boot offset.
+
 Steps:
 1. `tools/eamma_selftest.py` (Python port of `tools/run_shots.ps1`, `py -I`, stdlib + Pillow for a contact sheet):
    constants on their own lines the laptop can patch (`RUNS = r'E:\ClaudeGame\EAMMA-tests\selftest'`,
@@ -124,6 +127,9 @@ bit numbers before taking one (guide trap 28).
   -Extra @("--eamma_renderer=native","--eamma_native_perf=true","--svr_frame_diag_ms=45")`. Read `[nperf]` in fight
   seconds: `work` < 16.7 ms at 48.8/s = pacing; > 16.7 ms = cost, and the zone names it.
 - Run 2: emulated, same script, frame count per second in the fight (real reference, not NOTES.md's memory).
+- Evidence from the first laptop job (eamma-lap-boot-native, RTX 4060 at 1x): the fight shows the same
+  48.6-48.8 presents/s as Chi's 4090, and native reached the results screen ~2 s before emulated. A much weaker GPU
+  giving the same number points at pacing, not GPU cost.
 - If spinning: find EA's poll loop, hook it with the 1 ms sleep, keep UFC's off bit 524288 in `eamma_native_off`.
 - Pass: native fight fps equals emulated in the same scene, and the fight clock advances at the same rate on both.
 - Docs: new `FINDINGS-perf.md`.

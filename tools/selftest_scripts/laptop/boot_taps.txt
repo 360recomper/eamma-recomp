@@ -1,5 +1,5 @@
-# Laptop copy of boot_taps.txt: START then A every 4 s from 6 s to 94 s (the laptop boots ~15-20 s later than Chi;
-# shift or trim once eamma-lap-boot shows its real offset).
+# Laptop copy of boot_taps.txt: START then A every 4 s from 6 s to 94 s. eamma-lap-boot (2026-11-15) showed no
+# boot offset on the laptop (title ~8 s, menus ~20 s, fight ~40 s, same as Chi); the longer tap range is harmless.
 pad 0
 6 0 0.15 START
 +1.5 0 0.15 A
