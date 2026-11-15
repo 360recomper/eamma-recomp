@@ -52,6 +52,13 @@ REXCVAR_DECLARE(std::string, gpu_backend);
 REXCVAR_DEFINE_BOOL(eamma_invalid_fetch, true, "eamma",
                     "Set gpu_allow_invalid_fetch_constants (sample textures whose fetch constant is typed invalid)");
 
+// Native renderer switch (NATIVE-PLAN.md). Read once in LatchRenderer; nothing switches later.
+// The renderer itself is compiled into the game DLL (cmake/native_renderer.cmake); EN-5 adds the
+// bridge that hands the latch, the window and the null guest GPU over to it.
+REXCVAR_DEFINE_STRING(eamma_renderer, "emulated", "eamma",
+                      "Renderer: emulated (Xenos GPU emulation, default) or native (plume D3D12, not "
+                      "implemented yet)");
+
 class EammaApp : public rex::ReXApp {
  public:
   using rex::ReXApp::ReXApp;
@@ -83,7 +90,27 @@ class EammaApp : public rex::ReXApp {
     }
   }
 
+  // Native when asked for and compiled in; every other case runs the emulated renderer.
+  static bool LatchRenderer() {
+    const std::string& renderer = REXCVAR_GET(eamma_renderer);
+    if (renderer == "native") {
+#if defined(EAMMA_NATIVE_HOOKS)
+      REXLOG_INFO("native: renderer on (experimental, plume D3D12)");
+      return true;
+#elif defined(EAMMA_NATIVE_RENDERER)
+      // Scaffolding / census build (EAMMA_NATIVE_HOOKS off): no native hooks compiled.
+      REXLOG_WARN("native: not implemented, using the emulated renderer");
+#else
+      REXLOG_WARN("native: this build has no native renderer, using the emulated renderer");
+#endif
+    } else if (renderer != "emulated") {
+      REXLOG_WARN("eamma_renderer '{}' unknown, using the emulated renderer", renderer);
+    }
+    return false;
+  }
+
   void OnPreSetup(rex::RuntimeConfig& config) override {
+    native_ = LatchRenderer();
     eamma_defaults::Apply();
     // Xenos GPU emulation is a runtime-loaded plugin in v0.10; without it there is no GPU.
     if (!config.graphics) {
@@ -100,4 +127,6 @@ class EammaApp : public rex::ReXApp {
       REXLOG_WARN("could not enable gpu_allow_invalid_fetch_constants");
     }
   }
+ private:
+  bool native_ = false;
 };

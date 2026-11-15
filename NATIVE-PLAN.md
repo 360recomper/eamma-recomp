@@ -1,6 +1,6 @@
 # EA Sports MMA - native renderer plan
 
-Plan only: nothing native is built in this tree yet. Source: `E:\ClaudeGame\UFC-native\docs\NATIVE-RENDERER-GUIDE.md`
+Status 2026-11-15 (branch `native`): EN-0 passed, EN-2 scaffolding in, EN-1 research running. See "Progress" at the end. Source: `E:\ClaudeGame\UFC-native\docs\NATIVE-RENDERER-GUIDE.md`
 ("the guide"; chapter numbers below are its chapters). Port **UFC's tree** (`E:\ClaudeGame\UFC Recomp`, native code in
 `src/reblue/` + `src/native/`), not SvR's, as the guide says (ch. 1). Written 2026-11-14 while this tree first reached a fight on
 the emulated renderer (NOTES.md).
@@ -89,3 +89,29 @@ junction to the only copy of the disc extract - never delete or clean recursivel
 2. `shader_big.ast` format and whether run-time compilation happens in normal play (point 3).
 3. How much of a frame goes through command buffers (point 4).
 4. Which machine tests EA MMA native (point 5).
+
+## Progress
+
+- **2026-11-15 decisions taken (user: "continue, maybe we don't need anything else")**: GPL-3 accepted (local repo, no push);
+  work on branch `native`; cvar prefix `eamma_` with UFC's bit numbers; tests on this desktop through `tools/run_shots.ps1`
+  (it refuses to start while Rumble Roses holds the GPU), short runs.
+- **EN-0 passed.** Generated DLL functions are `weak` (`generated/mmadllzf_xex/eamma_pch.h` DEFINE_REX_FUNC), so a strong
+  `extern "C" REX_FUNC(sub_X)` compiled into the DLL target replaces it for every caller and `__imp__sub_X` is the original.
+  `src/dev/eamma_hook_proof.cpp` hooks `sub_8831C250` (D3DDevice_Swap: the DLL's only VdSwap caller): logs once a frame
+  (r3 = device 0xBE4B9E80, game caller lr 0x88A64C34), picture unchanged (run en0, attract screen at 30 s).
+  Open question 1 answered: hook sources join the DLL's sources (`eamma_add_native_renderer(eamma_MMADLLzf_xex)`).
+- **Reference choice:** FNC Reborn (the EA fight-game reference) has no native renderer: it runs the SDK's emulated GPU.
+  UFC's base is its `claude/native-renderer` branch (0334642, the state the guide describes), not `main`: main has photo
+  mode, eyelid blend and blood code woven into `src/reblue`. Generic fixes made on UFC main later, to cherry-pick when
+  needed: c9c75d2 (unaligned DXT decoded to RGBA8), d4dec70 + 783c7f5 (constant arrays to c255, split off bits).
+- **EN-2 scaffolding:** `src/reblue`, `src/native`, `cmake/`, `patches/`, `tools/native`, `tools/nr_*.py`, `third_party/`
+  copied; plume / XenosRecomp copied already patched from UFC's tree (not committed). Removed because they hook UFC
+  addresses (trap 13): `ufc_nr10_probe.cpp` (stubbed header kept), `ufc_memexport_cpu.*`, `ufc_gpu_wait_diag.cpp`.
+  `ufc3_` -> `eamma_` in names; `EAMMA_NATIVE_HOOKS` defaults OFF until `ufc_d3d_names.h` holds EA MMA's map;
+  UFC's player-PC shader extractor is not built (EN-4 decides EA MMA's source). `eamma_renderer` cvar in `src/eamma_app.h`.
+  - Still Blue Dragon / UFC guest addresses in generic code to audit before EN-5 (in EA MMA 0x82xxxxxx is the launcher image):
+    `kCurrentRenderPassIdVa` 0x82777474 (gpu/device.cpp), `kRenderStateCacheVa` (gpu/draw.cpp), `kTextQuadBatchEA`
+    (hooks/draw.cpp), render/sampler state tables (hooks/device.cpp), census image scan 0x82000000.. (src/dev).
+  - App <-> renderer bridge (EN-5): the renderer lives in the DLL, the window/app in the exe; `g_eamma_native` and the
+    cvars must be read on the DLL side. The host DLL is loaded lazily at XexLoadImage, after command-line parsing, so DLL
+    cvars won't see the command line unless the exe loads the DLL early (or links its import library).

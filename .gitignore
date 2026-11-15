@@ -20,3 +20,12 @@
 !/tools/
 /tools/__pycache__/
 *.pyc
+
+# Native renderer (NATIVE-PLAN.md EN-2). plume and XenosRecomp are fetched and patched by
+# tools/nr_fetch_third_party.py (or copied from UFC's patched tree), not committed.
+!/LICENSE
+!/cmake/
+!/patches/
+!/third_party/
+/third_party/plume/
+/third_party/XenosRecomp/

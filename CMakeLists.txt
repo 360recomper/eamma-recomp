@@ -25,5 +25,19 @@ rexglue_setup_target(eamma GPU_PLUGINS xenos)
 
 # Diagnostics linked into the game DLL (camera imports now come from the EA MMA SDK copy) (target from generated/default/dll_targets.cmake).
 if(TARGET eamma_MMADLLzf_xex)
-    target_sources(eamma_MMADLLzf_xex PRIVATE src/eamma_swap_trace.cpp)
+    target_sources(eamma_MMADLLzf_xex PRIVATE src/eamma_swap_trace.cpp src/dev/eamma_hook_proof.cpp)
+endif()
+
+# Native renderer (NATIVE-PLAN.md, cmake/native_renderer.cmake): compiled into the game DLL, where
+# the D3D library lives, and picked at run time with eamma_renderer=native; the default stays
+# emulated. build.bat native / nonative sets it.
+option(EAMMA_NATIVE_RENDERER "Compile in the native (plume D3D12) renderer" OFF)
+if(EAMMA_NATIVE_RENDERER AND TARGET eamma_MMADLLzf_xex)
+    include(cmake/native_renderer.cmake)
+    eamma_add_native_renderer(eamma_MMADLLzf_xex)
+    # The app (src/eamma_app.h, in the exe) only needs to know what was compiled in.
+    target_compile_definitions(eamma PRIVATE EAMMA_NATIVE_RENDERER=1)
+    if(EAMMA_NATIVE_HOOKS)
+        target_compile_definitions(eamma PRIVATE EAMMA_NATIVE_HOOKS=1)
+    endif()
 endif()
