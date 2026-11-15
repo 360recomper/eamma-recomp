@@ -53,9 +53,11 @@ step you touch. The user wants work to continue step to step without asking for 
 ## Next steps (suggested order; see NATIVE-ISSUES.md section E for the advisor's reasoning)
 1. A1 skin: fixed (XenosRecomp loop start/step, FINDINGS-a1-skin.md). Re-check A2 halo first: it may have been the
    same over-bright SSS/bloom.
-2. Static check left: depth bias never fed (pipeline_cache.cpp zeroes depthBias). (+0x294C/+0x29C0: done, correct.)
+2. Depth bias: never fed (pipeline/pipeline_cache.cpp:105), but no logged draw enables polygon offset (PA_SU_SC_MODE_CNTL
+   is only 0x18000 / 0x18002 in every draw log so far). Feed it when a scene shows bits 11/12.
 3. (done: capture drops oldest; depthFlip gated on VTE z-scale.)
 4. A2 halo: skip skin PS (bloom?) / skip DOF PS / check half-pixel offset; halo width tells which.
-5. B7: A/B `--eamma_native_wb_eager_frames=-1`.
-6. Consider making the census a run-time switch inside the native build (no more 10-minute rebuilds).
+5. B7: done, eager write-back off by default (n43nowb).
+6. Census as a run-time switch: deferred. The native hooks already own 14 of its 26 counted functions plus
+   Swap/Clear/Resolve/draws, so its counters would have to move into those hooks (hours, low value for now).
 7. A3 light shafts (integer constants), then speed, scaling, the guide's Week 2.
