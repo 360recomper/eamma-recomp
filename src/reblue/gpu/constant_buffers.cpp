@@ -808,6 +808,12 @@ ConstantAllocation UploadSharedConstants(u32 device_guest) {
       s.shared.booleansArr[4 + i] =
           device ? u32(device->psBoolConstants[i]) : 0u;
     }
+#if defined(SVR_NATIVE_RENDERER)
+    // EA MMA: loop constants (count | start << 8 | step << 16), VS 0-15 then PS 16-31, at device
+    // +0x27A0 (setters sub_88310D20 / sub_88310D78). Shaders read the ones they don't define.
+    for (u32 i = 0; i < 32; ++i)
+      s.shared.loopConstants[i] = bd::mem::load<u32>(device_guest + 0x27A0u + i * 4u);
+#endif
   }
 
   s.shared.alphaThreshold = bd::gpu::Video::AlphaThreshold();

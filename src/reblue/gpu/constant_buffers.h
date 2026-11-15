@@ -76,6 +76,9 @@ struct SharedConstants {
   // Computed vfetch table by input location: byte offset, stride, format (svrVfetch's codes,
   // 0 = reads zero), stream. Zero unless the bound vertex shader needs it.
   u32 vfetchElements[24][4]{};     // c40..c63, bytes 640..1023
+  // EA MMA: Xenos loop constants 0..31 (VS i0-15, PS i0-15 = 16-31) from device +0x27A0, for the
+  // integer constants a shader uses without defining them (loopConst() in shader_common.h).
+  u32 loopConstants[32]{};         // c64..c71, bytes 1024..1151
 #endif
 };
 #if defined(SVR_NATIVE_RENDERER)
@@ -83,7 +86,8 @@ static_assert(offsetof(SharedConstants, texture2DIndicesHi) == 384);
 static_assert(offsetof(SharedConstants, samplerIndicesHi) == 576);
 static_assert(offsetof(SharedConstants, vertexIdBase) == 368);
 static_assert(offsetof(SharedConstants, vfetchElements) == 640);
-static_assert(sizeof(SharedConstants) == 1024);
+static_assert(offsetof(SharedConstants, loopConstants) == 1024);
+static_assert(sizeof(SharedConstants) == 1152);
 #else
 static_assert(sizeof(SharedConstants) == 352);
 #endif

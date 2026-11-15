@@ -89,3 +89,26 @@ lighting on face/chest, black seams on the head top, a black line across the nec
   cache afterwards (`python -I tools/nr_build_shader_cache.py` without the env).
 - Draw log: SSS PS 8767A8E6 in the full register dump; device-side fetch constants (dword0/dword3) for slots 0-13.
 - `SVR_NO_HALF_PIXEL=1` (env): drop the D3D9 half-pixel offset (A/B only).
+
+### A5 update (advisor round 3 + runs n53-n61)
+- **Isolated: the variance (Chebyshev) branch of the SSS pass's shadow test.** Override `r5.z = r3.w` (hard test only)
+  removes the patchwork; the face then matches emulated (n58hard vs e54menu/012, same pose). Not a fix: the game uses
+  `max(hard, p)`.
+- Moments: var = m2 - m1^2 (R x200, n59var) is striped on smooth lit areas, above the ~0.003 that 8-bit storage alone
+  gives; diff on lit areas ~ -bias as expected. Bypassing the shadow-map blur (#18 A86CC2D0, n60noblur) does not help
+  (patchier), so the noise is in the caster output itself.
+- Ruled out this round: handedness/TEXCOORD0.w (it is the flex-normal blend weight; zero in guest data too; vfetch
+  formats come from the declaration, verified by decoding the containers), DEC3N w (masked), cull, MAX blend mapping,
+  shadow RT format (guest D3DFMT 0x18280186 = 8888 for every target, n61rtfmt), emulated resolution scale (1x, ROV path).
+- Side finding: the main 1280x720 scene surface has MSAA bits set in RB_SURFACE_INFO (0x14020500): the console renders
+  it 4x MSAA; native doesn't.
+- Open: why the caster's (d, d^2) pair carries more variance natively. Next ideas: dump caster VS/PS outputs for one
+  vertex (log), compare interpolation of d^2 vs d (centroid/sample interpolation flags in the caster PS inputs), and
+  check whether the caster PS writes oC0 from interpolators declared `centroid` (MSAA-related) on console.
+
+## A3 light shafts: translated (n57shafts)
+XenosRecomp now reads loop (integer) constants it doesn't define from `g_LoopConstants` (shared constants c64..c71,
+filled from device +0x27A0: VS i0-15 then PS i0-15, one dword `count | start << 8 | step << 16`; EA setters
+sub_88310D20 / sub_88310D78 store at (2536+i)*4 / (2552+i)*4). POSTFX 71c9fb2b (i16 = PS i0) compiles: 418/418, and
+the run no longer logs "shader miss 1CCBA38AC6B29550". The shafts were not seen on screen yet (no logged frame drew
+that shader); fight/menus unchanged, no hang.

@@ -37,8 +37,20 @@ index 8c51476..18c076f 100644
                  if (!hlslDumpDir.empty())
                  {
                      auto path = std::filesystem::path(hlslDumpDir) /
+diff --git a/XenosRecomp/pch.h b/XenosRecomp/pch.h
+index 5b39977..9589e89 100644
+--- a/XenosRecomp/pch.h	
++++ b/XenosRecomp/pch.h	
+@@ -19,6 +19,7 @@
+ #include <string>
+ #include <unordered_map>
+ #include <unordered_set>
++#include <set>
+ #include <vector>
+ #include <xxhash.h>
+ #include <zstd.h>
 diff --git a/XenosRecomp/shader_common.h b/XenosRecomp/shader_common.h
-index 6d8a497..01fcd6b 100644
+index 6d8a497..d4deba4 100644
 --- a/XenosRecomp/shader_common.h	
 +++ b/XenosRecomp/shader_common.h	
 @@ -5,6 +5,8 @@
@@ -61,7 +73,7 @@ index 6d8a497..01fcd6b 100644
  // UFC 3: locations 16-19 (second bone set, COLOR2, PSIZE, BINORMAL) go past Vulkan's guaranteed 16;
  // fine on D3D12 (32 inputs), the only API UFC's native renderer builds.
  
-@@ -70,6 +74,9 @@ struct PushConstants
+@@ -70,9 +74,13 @@ struct PushConstants
  #define g_SwappedPositions         vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 320)
  #define g_SintTexcoords            vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 324)
  #define g_ShadowPcfScale           vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + 328)
@@ -71,7 +83,11 @@ index 6d8a497..01fcd6b 100644
  // SvR 2008: window-pixel to clip-space conversion for draws made with the viewport transform off
  // (D3DRS_VIEWPORTENABLE FALSE: the vertex shader outputs window pixels); identity otherwise.
  #define g_ScreenSpace              vk::RawBufferLoad<float4>(g_PushConstants.SharedConstants + 352)
-@@ -99,6 +106,7 @@ struct PushConstants
++#define g_LoopConstantRaw(n)       vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 1024 + (n)*4)
+ #else
+ #define g_Booleans                 vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 256)
+ #define g_SwappedTexcoords         vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 260)
+@@ -99,10 +107,14 @@ struct PushConstants
      uint g_SwappedPositions : packoffset(c20.x); \
      uint g_SintTexcoords : packoffset(c20.y); \
      float g_ShadowPcfScale : packoffset(c20.z); \
@@ -79,7 +95,27 @@ index 6d8a497..01fcd6b 100644
      float4 g_ScreenSpace : packoffset(c22); \
      int g_VertexIdBase : packoffset(c23.x); \
      uint2 g_VfetchStreamBytes : packoffset(c23.y); \
-@@ -284,10 +292,33 @@ float4 tfetchCubeLod0(uint resourceDescriptorIndex, uint samplerDescriptorIndex,
+-    uint4 g_VfetchElements[24] : packoffset(c40);
++    uint4 g_VfetchElements[24] : packoffset(c40); \
++    uint4 g_LoopConstants[8] : packoffset(c64);
++
++#define g_LoopConstantRaw(n) (g_LoopConstants[(n) / 4][(n) % 4])
+ 
+ #define g_Booleans(i) (g_BooleansArr[(i) / 4][(i) % 4])
+ #else
+@@ -118,6 +130,11 @@ uint g_SpecConstants();
+ #endif
+ 
+ #ifdef REBLUE_RECOMP
++// EA MMA: Xenos loop constant N (VS 0..15, PS 16..31) as the game wrote it: count | start << 8 | step << 16
++// (step signed). Unpacked like a literal int4 definition (count, start, step, 0).
++#define loopConst(n) int4(int(g_LoopConstantRaw(n) & 0xFFu), int((g_LoopConstantRaw(n) >> 8) & 0xFFu), \
++                         int(g_LoopConstantRaw(n) << 8) >> 24, 0)
++
+ // Test Xenos boolean register N in the unified VS(0..127)/PS(128..255) file.
+ #define BOOL_BIT(n) ((g_Booleans((n) / 32u) & (1u << ((n) & 31u))) != 0)
+ #endif
+@@ -284,10 +301,33 @@ float4 tfetchCubeLod0(uint resourceDescriptorIndex, uint samplerDescriptorIndex,
      return g_TextureCubeDescriptorHeap[resourceDescriptorIndex].SampleLevel(g_SamplerDescriptorHeap[samplerDescriptorIndex], cubeMapData.cubeMapDirections[texCoord.z], 0);
  }
  
@@ -114,7 +150,7 @@ index 6d8a497..01fcd6b 100644
      {
          uint v = asuint(value.x);
 diff --git a/XenosRecomp/shader_recompiler.cpp b/XenosRecomp/shader_recompiler.cpp
-index c72574a..d551a12 100644
+index c72574a..dcef496 100644
 --- a/XenosRecomp/shader_recompiler.cpp	
 +++ b/XenosRecomp/shader_recompiler.cpp	
 @@ -408,15 +408,15 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
@@ -180,7 +216,15 @@ index c72574a..d551a12 100644
      out += ").";
  
      printDstSwizzle(instr.dstSwizzle, true);
-@@ -2084,6 +2107,11 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2003,6 +2026,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+ 
+                 println("\tint4 i{} = int4({}, {}, {}, {});",
+                     (definition->registerIndex - 8992) / 4 + i, x, y, z, w);
++                literalIntConstants.insert((definition->registerIndex - 8992) / 4 + i);
+             }
+             definitions += 2;
+             definitions += definition->count;
+@@ -2084,6 +2108,12 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
  
      out += "\tint a0 = 0;\n";
      out += "\tint aL = 0;\n";
@@ -189,10 +233,19 @@ index c72574a..d551a12 100644
 +    out += "\tint aLi = 0;\n";
 +    // EA MMA: setTexLOD writes the level that register-LOD fetches (useRegLod) sample.
 +    out += "\tfloat texLod = 0.0;\n";
++    out += "\t//@RUNTIME_INT_CONSTANTS@\n";
      out += "\tbool p0 = false;\n";
      out += "\tfloat ps = 0.0;\n";
      out += "\tfloat4 coIssue = 0.0;\n";
-@@ -2441,14 +2469,15 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2435,20 +2465,23 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+                 break;
+ 
+             case ControlFlowOpcode::LoopStart:
++                if (literalIntConstants.count(uint32_t(cfInstr.loopStart.loopId)) == 0)
++                    runtimeIntConstants.insert(uint32_t(cfInstr.loopStart.loopId));
+                 if (simpleControlFlow)
+                 {
+                     indent();
                  #ifdef UNLEASHED_RECOMP
                      print("[unroll] ");
                  #endif
@@ -210,7 +263,7 @@ index c72574a..d551a12 100644
                  }
                  break;
  
-@@ -2461,8 +2490,9 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2461,8 +2494,9 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                  }
                  else
                  {
@@ -222,7 +275,7 @@ index c72574a..d551a12 100644
                      out += "\t\t\t{\n";
                      println("\t\t\t\tpc = {};", uint32_t(cfInstr.loopEnd.address));
                      out += "\t\t\t\tcontinue;\n";
-@@ -2644,6 +2674,8 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2644,6 +2678,8 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                      {
                  #ifdef REBLUE_RECOMP
                          out += "\toPos.xy = oPos.xy * g_ScreenSpace.xy + g_ScreenSpace.zw * oPos.w;\n";
@@ -231,3 +284,35 @@ index c72574a..d551a12 100644
                  #endif
                          out += "\toPos.xy += g_HalfPixelOffset * oPos.w;\n";
                      }
+@@ -2704,6 +2740,16 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+         }
+     }
+ 
++    {
++        // EA MMA: run-time loop constants (POSTFX light shafts: i16 = sample count).
++        std::string runtimeInts;
++        for (uint32_t id : runtimeIntConstants)
++            runtimeInts += fmt::format("\tint4 i{0} = loopConst({0});\n", id);
++        const std::string marker = "\t//@RUNTIME_INT_CONSTANTS@\n";
++        if (auto at = out.find(marker); at != std::string::npos)
++            out.replace(at, marker.size(), runtimeInts);
++    }
++
+ #ifdef UNLEASHED_RECOMP
+     if (hasMtxProjection)
+         out += "\t}\n";
+diff --git a/XenosRecomp/shader_recompiler.h b/XenosRecomp/shader_recompiler.h
+index b332132..0380bb7 100644
+--- a/XenosRecomp/shader_recompiler.h	
++++ b/XenosRecomp/shader_recompiler.h	
+@@ -35,6 +35,10 @@ struct ShaderRecompiler : StringBuffer
+     // Structured if/else emission: instruction indices where a "} else {" is
+     // emitted (then-branch close is part of the event, not ifEndLabels).
+     std::unordered_set<uint32_t> elseLabels;
++    // EA MMA: loop (integer) constants the shader defines literally, and the ones it uses without a
++    // definition (set by the game at run time; read from g_LoopConstants).
++    std::unordered_set<uint32_t> literalIntConstants;
++    std::set<uint32_t> runtimeIntConstants;
+     uint32_t specConstantsMask = 0;
+ 
+ #ifdef UNLEASHED_RECOMP

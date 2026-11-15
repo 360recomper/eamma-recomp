@@ -327,6 +327,10 @@ void SvrDrawLogDraw(u32 device_guest, const char *name, u32 primitive, bool inde
       }
     }
   }
+  // A5: the guest colour surface format (EDRAM format in SurfaceInfo, D3DFORMAT at +0x28).
+  if (const auto *rts = bd::mem::try_at<const D3DSurface>(u32(dev->renderTargetShadow[0])))
+    BD_INFO("[drawlog]   rt-guest surfaceinfo 0x{:08X} format 0x{:08X}", u32(rts->SurfaceInfo),
+            u32(rts->Format));
   BD_INFO("[drawlog] #{} {} prim {} {} count {} start {} base {} | rt 0x{:08X}[{}] ds 0x{:08X}[{}] "
           "| vp {:.0f},{:.0f} {:.0f}x{:.0f} z {:.2f}-{:.2f} sc {},{}-{},{} | vs {:016X} ps {:016X} "
           "|{}",
@@ -359,7 +363,7 @@ void SvrDrawLogDraw(u32 device_guest, const char *name, u32 primitive, bool inde
       }
     std::string v;
     if (const u8 *vp = phys(SvrGpuAddress(f0 & 0x1FFFFFFCu)); vp && stride)
-      for (u32 k = 0; k < 6; ++k) {
+      for (u32 k = 0; k < 8; ++k) {
         const u32 w = word(vp + size_t(first) * stride + k * 4u);
         float f;
         std::memcpy(&f, &w, 4);
