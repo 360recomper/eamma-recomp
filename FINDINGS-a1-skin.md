@@ -126,3 +126,6 @@ patches along UV islands), and triangles mixing old/new vertices opened cracks (
 - n73default: 16 frames across intro, fight, pause, KO, highlights clean.
 - Everything the A5 shader experiments "found" (variance branch, acne) was downstream of the mismatched geometry.
   Lesson (also for C-list): when two passes of the same mesh disagree, verify the vertex data first.
+
+- A3 follow-up (n74watch, `SVR_LOG_PS=1CCBA38AC6B29550`): the light-shaft PS is never drawn in boot -> menus ->
+  fight -> highlights (every draw path reports to the watch). Needs another scene (other venue / walkout).

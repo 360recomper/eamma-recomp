@@ -32,6 +32,8 @@ step you touch. The user wants work to continue step to step without asking for 
   draws). Summary: `python -I tools/nr_drawlog_summary.py shots/X/run.log`.
 - `SVR_PRESENT_TARGET=<va hex>`, `=tiled` or `=<W>x<H>` (env): present a resolve target instead of the front buffer
   (`256x256` = the skin SSS map). Colours are as the present path shows them, not raw values.
+- `SVR_LOG_PS=<hash>` (env): a line per second while that pixel shader is drawn (find the scene using it).
+- `XENOS_RECOMP_HLSL_OVERRIDE=<dir>` (env at cache build): replace one shader's HLSL (`<dir>/<HASH>.hlsl`) to instrument it.
 - `--eamma_native_skin_black_slots=<mask>`: null the given texture slots for the skin pixel shaders (bisection).
 - Run scripts need an absolute `-Script` path (the game's working directory is the build folder).
 - `EAMMA_NO_DEPTH_TEST=1` (env), `SVR_SAMPLE_STACKS=<ms>` (stack samples to native_samples.txt).

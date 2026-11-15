@@ -142,6 +142,23 @@ void SvrDrawLogNextFrame() {
 
 void SvrDrawLogDraw(u32 device_guest, const char *name, u32 primitive, bool indexed, u32 count,
                     u32 start, i32 base) {
+  // SVR_LOG_PS=<hash hex> (env): one line per second while draws use that pixel shader (frame index
+  // and how many draws), to find the scenes that draw it (A3 light shafts: 1CCBA38AC6B29550).
+  {
+    static const u64 watch = [] {
+      const char *env = std::getenv("SVR_LOG_PS");
+      return env ? std::strtoull(env, nullptr, 16) : 0ull;
+    }();
+    if (watch && ShaderHash(state().pixel_shader) == watch) {
+      static u64 s_last_frame = 0, s_count = 0;
+      ++s_count;
+      const u64 frame = SvrFrameIndex();
+      if (frame >= s_last_frame + 30) {
+        BD_INFO("[watch-ps] {:016X} drawn at frame {} ({} draws so far)", watch, frame, s_count);
+        s_last_frame = frame;
+      }
+    }
+  }
   if (!SvrDrawLogActive())
     return;
   static u32 s_index = 0;
