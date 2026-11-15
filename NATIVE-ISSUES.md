@@ -7,9 +7,11 @@ still differs from emulated. Details per step: `FINDINGS-en1..en5-*.md`, plan: `
 | # | Issue | Seen in | Lead |
 |---|---|---|---|
 | A1 | ~~Fighter skin pale/ashen with orange or white blotches~~ **Fixed**: XenosRecomp ignored loop start/step; the SSS blur doubled its centre tap and over-brightened the SSS map (FINDINGS-a1-skin.md, n39loop/060) | shots/n33/120.png -> n39loop/060.png | Check more scenes/fighters shot for shot vs emulated (A4) |
-| A2 | Light halo around the menu fighter's silhouette | n33/015.png | Depth of field / depth-aware blur reading the resolved depth: depth resolve format (k_24_8 vs host D24/D32) or the z flip at resolve time |
+| A2 | Light halo around the menu fighter's silhouette: **probably gone** with A1/A5 (no halo in n73default/015 vs en3d/015) | n33/015.png | Confirm with one content-matched menu pair (WP5), then strike |
 | A3 | Light shafts: shader now translated (run-time loop constants, 418/418); not yet seen on screen | - | Find a scene that draws PS 1CCBA38A and compare with emulated |
 | A5 | ~~Menu/fight fighter lighting patches, black cracks~~ **Fixed**: the game rewrites skinned vertex buffers mid-frame without an Unlock; geometry is now compared at every draw (FINDINGS-a1-skin.md, n73default) | n46lod/010 -> n69geomfix/010 | - |
+| A6 | Menu crowd behind the fence missing natively (may be fade timing) | n73default/015 vs en3d/015 | 1 s shots 8-20 s on both renderers; if still missing, draw log at that second (WP5) |
+| A7 | Alpha-to-mask dropped: one fight draw a frame sets RB_COLORCONTROL alpha-to-mask (0x7E000016, VS C05918844A3CF2C8 / PS B61F648032C00706); alpha-to-coverage is forced off and surfaces are 1 sample, so it draws opaque. Lead: hair/beard cards (test fighters are bald) | draw_bindings.cpp:186 | WP4 names the mesh, WP6 adds a 1-sample fallback |
 | A4 | Unknown: everything not yet A/B'd shot for shot (career, create-a-fighter, other venues, replays) | - | Only boot -> menus -> one fight -> highlights tested |
 
 ## B. Correctness risks in what was built
@@ -24,7 +26,8 @@ still differs from emulated. Details per step: `FINDINGS-en1..en5-*.md`, plan: `
 | B7 | ~~Eager resolve write-back on by default~~ **Off by default now** (`eamma_native_wb_eager_frames=-1`): run n43nowb shows boot, menus, loading, fight and highlights the same without it; the switch stays for A/B | ufc_resolve_writeback.cpp |
 | B8 | The guest-memory reads in the draw log use TranslatePhysical; earlier `bd::mem::try_load` on the 0xA... view returned 0 silently and misled a diagnosis (C3) | ufc_draw_log.cpp |
 | B9 | `src/native/ufc_d3d.h` / `gpu/d3d.h` offsets: only VS/PS/decl and the recording CB were proven at run time; front/back buffer, ring guarantee, register-shadow blocks (+0x2880..) are assumed from UFC/SvR. +0x294C (VTE) and +0x29C0 (pixel centre) now checked against EA's setters | FINDINGS-en1-d3d-map.md section 7 |
-| B10 | Mixed-scale resolve (scaled source -> 1x destination) stretches the whole source surface; the console copies the source rect 1:1, clipped to the destination (here a 2x 1024x1024 surface into a 1024x512 texture should take its top half). Seen 2-3 times per address at 2x (n75/n76), no visible effect in boot/menus/fight | hooks/draw.cpp mixed_scale (needs a scaled region blit) |
+| B10 | **Real bug at any scale other than 1x** (wrong mips reach guest memory: the 1024x512 fighter composite's mips 1-3 are resolved from a scaled 1024x1024 scratch surface and the CPU reads them back). Mixed-scale resolve (scaled source -> 1x destination) stretches the whole source surface; the console copies the source rect 1:1, clipped to the destination (here a 2x 1024x1024 surface into a 1024x512 texture should take its top half). Seen 2-3 times per address at 2x (n75/n76), no visible effect in boot/menus/fight | hooks/draw.cpp mixed_scale (needs a scaled region blit) |
+| B11 | Keep-1x list `1024x512,384x64,64x64` and the "16F always 1x" rule are UFC's (face liquid map, ambient cube), not EA's: 1024x512 is EA's fighter composite, and EA's 480x270 16F scene buffer stays 1x while its depth scales (lead: depth/DOF/SSAO input) | ufc_resources.cpp:58 (WP2 sets EA's own list) |
 
 ## C. What went wrong so far (mistakes and dead ends)
 | # | What happened | Cost | Lesson |
@@ -45,7 +48,7 @@ still differs from emulated. Details per step: `FINDINGS-en1..en5-*.md`, plan: `
 - Every native A/B run is ~2-4 min (build ~1-10 min when the DLL target's defines change: switching native <-> census
   rebuilds the whole 17 MB DLL). Keep one configuration per session where possible.
 - Intermittent crash at the profile save (~15 s): null read +0x134/+0x148 in rexruntime, seen once natively (n26) and
-  once emulated earlier (NOTES.md fnc2). Not caused by the renderer as far as known.
+  once emulated earlier (NOTES.md fnc2). Not caused by the renderer as far as known. **Release risk** (no package owns it).
 - Rumble Roses GPU priority: `tools/run_shots.ps1` refuses to start while it holds the GPU.
 - Agent research (EN-1 D3D map, shader inventory) was accurate where spot-checked; both agents could not write files
   (harness rule), so their reports were saved by hand.
@@ -62,7 +65,7 @@ still differs from emulated. Details per step: `FINDINGS-en1..en5-*.md`, plan: `
 - **B1/B2:** design confirmed against sub_883198E0 / sub_88319858. Real defect: at 4096 records the newest are dropped;
   drop the oldest or clear at Swap. B2 speculative: inlined XDK SetConstantF writes (block + dirty bits, invisible to
   the call census) could collide with a capture on the same register before one draw.
-- **Reversed-Z flip judged exact** (stored depth = console's; resolves, shadow compares, depth reads unaffected). Holes:
+- **Reversed-Z flip judged exact (unverified for draws with the viewport transform off)** (stored depth = console's; resolves, shadow compares, depth reads unaffected). Holes:
   gate `depthFlip` on VTE (a viewport-transform-off draw with an inverted device viewport gets flipped wrongly); depth
   bias above.
 - B3 leave; B4 nearly right (only a "skip first tile clear" flag could differ; colour clear packed to 8-bit); B6 fine;

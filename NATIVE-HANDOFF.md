@@ -63,12 +63,12 @@ step you touch. The user wants work to continue step to step without asking for 
 1. Done today: A1 (loop start/step), A2 (gone with A1), A5 (stale geometry: every-draw compare is the default),
    A3 translated (run-time loop constants), setTexLOD, B7 off. Next: see light shafts on screen (find a scene that
    draws PS 1CCBA38A), A4 broader A/B (career, create-a-fighter, other venues), MSAA (the main scene is 4x on console).
-   Scaling: `--eamma_native_scale=2` renders boot/menus/fight/results correctly at 2560x1440, 30 fps (n75scale2);
+   Scaling: `--eamma_native_scale=2` renders boot/menus/fight/results correctly at 2560x1440 (n75scale2; 30 presents/s in menus/intros, 48.8/s in the fight at both 1x and 2x, unexplained: WP1);
    open item B10 (mixed-scale resolve stretches the whole surface).
 2. Depth bias: never fed (pipeline/pipeline_cache.cpp:105), but no logged draw enables polygon offset (PA_SU_SC_MODE_CNTL
    is only 0x18000 / 0x18002 in every draw log so far). Feed it when a scene shows bits 11/12.
 3. (done: capture drops oldest; depthFlip gated on VTE z-scale.)
-4. A2 halo: skip skin PS (bloom?) / skip DOF PS / check half-pixel offset; halo width tells which.
+4. A2 halo: probably gone (no halo in n73default/015 vs en3d/015); confirm with one menu pair in WP5.
 5. B7: done, eager write-back off by default (n43nowb).
 6. Census as a run-time switch: deferred. The native hooks already own 14 of its 26 counted functions plus
    Swap/Clear/Resolve/draws, so its counters would have to move into those hooks (hours, low value for now).

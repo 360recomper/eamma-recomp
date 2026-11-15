@@ -122,7 +122,7 @@ patches along UV islands), and triangles mixing old/new vertices opened cracks (
   buffers alone does not (n67). Check mode (n68) reports mid-frame rewrites of 334 KB / 145 KB / 39 KB vbs.
 - A "changed in the last 60 frames -> compare at every use" rule fixed the menu (n69) but a fight still showed black
   blotches once (n70 060), so **every-draw comparison is now the default** (`eamma_native_geometry_every_draw` true;
-  ~1 ms/frame of hashing on a 4090 box, 30 fps held, n72perfA/B). The 60-frame rule stays for when it is turned off.
+  ~1 ms/frame of hashing on a 4090 box, 30 fps held in menus/intros only: n72perfA/B stopped before the fight, where native presents 48.8/s, see WP1 / FINDINGS-perf.md). The 60-frame rule stays for when it is turned off.
 - n73default: 16 frames across intro, fight, pause, KO, highlights clean.
 - Everything the A5 shader experiments "found" (variance branch, acne) was downstream of the mismatched geometry.
   Lesson (also for C-list): when two passes of the same mesh disagree, verify the vertex data first.

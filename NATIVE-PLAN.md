@@ -75,7 +75,7 @@ Stop 2 if the menus can't be made to match.
 ## Week 2 on
 Fights at 1x (chapter 9 table first: fans, integer vertex formats, ambient cube as 2D, fetch swizzle, computed vfetch, co-issue,
 constant arrays to c255), then pictures the CPU reads (ch. 10), scaling with EA MMA's own keep-1x list (ch. 11), speed (ch. 12;
-copy every UFC default with its off bit; measure on the reference GPU only after `-O2` is checked), FSR 1 (ch. 13, generic: copy the
+copy every UFC *speed* default with its off bit, but not keep-1x, the 16F rule or Swap-poll, which are UFC game data/addresses; measure on the reference GPU only after `-O2` is checked), FSR 1 (ch. 13, generic: copy the
 four files), GPU pick (ch. 14: `gpu_preference.cpp` must go in the **exe**, not the DLL), and a launcher only if EA MMA gets one (ch. 15).
 Every new path gets an off bit. Mods last.
 
