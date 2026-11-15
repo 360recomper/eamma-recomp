@@ -56,6 +56,8 @@ step you touch. The user wants work to continue step to step without asking for 
 1. Done today: A1 (loop start/step), A2 (gone with A1), A5 (stale geometry: every-draw compare is the default),
    A3 translated (run-time loop constants), setTexLOD, B7 off. Next: see light shafts on screen (find a scene that
    draws PS 1CCBA38A), A4 broader A/B (career, create-a-fighter, other venues), MSAA (the main scene is 4x on console).
+   Scaling: `--eamma_native_scale=2` renders boot/menus/fight/results correctly at 2560x1440, 30 fps (n75scale2);
+   open item B10 (mixed-scale resolve stretches the whole surface).
 2. Depth bias: never fed (pipeline/pipeline_cache.cpp:105), but no logged draw enables polygon offset (PA_SU_SC_MODE_CNTL
    is only 0x18000 / 0x18002 in every draw log so far). Feed it when a scene shows bits 11/12.
 3. (done: capture drops oldest; depthFlip gated on VTE z-scale.)

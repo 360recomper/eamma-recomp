@@ -24,6 +24,7 @@ still differs from emulated. Details per step: `FINDINGS-en1..en5-*.md`, plan: `
 | B7 | ~~Eager resolve write-back on by default~~ **Off by default now** (`eamma_native_wb_eager_frames=-1`): run n43nowb shows boot, menus, loading, fight and highlights the same without it; the switch stays for A/B | ufc_resolve_writeback.cpp |
 | B8 | The guest-memory reads in the draw log use TranslatePhysical; earlier `bd::mem::try_load` on the 0xA... view returned 0 silently and misled a diagnosis (C3) | ufc_draw_log.cpp |
 | B9 | `src/native/ufc_d3d.h` / `gpu/d3d.h` offsets: only VS/PS/decl and the recording CB were proven at run time; front/back buffer, ring guarantee, register-shadow blocks (+0x2880..) are assumed from UFC/SvR. +0x294C (VTE) and +0x29C0 (pixel centre) now checked against EA's setters | FINDINGS-en1-d3d-map.md section 7 |
+| B10 | Mixed-scale resolve (scaled source -> 1x destination) stretches the whole source surface; the console copies the source rect 1:1, clipped to the destination (here a 2x 1024x1024 surface into a 1024x512 texture should take its top half). Seen 2-3 times per address at 2x (n75/n76), no visible effect in boot/menus/fight | hooks/draw.cpp mixed_scale (needs a scaled region blit) |
 
 ## C. What went wrong so far (mistakes and dead ends)
 | # | What happened | Cost | Lesson |
