@@ -49,6 +49,8 @@ WP3 coverage ledger (S code) ─┐               │
 WP1 fight pacing (R) ──┬──────┤               │
 WP2 keep-1x + B10 (R) ─┴──────┴─► WP5 mode sweep (R) ─► WP6 alpha-to-mask (R) ─► WP8 perf ladder + soak (R) ─► WP9 MSAA (optional)
 WP7 release set (mostly S; CMake/tools/exe only) — any time, parallel with the rest
+WP10 launcher (S, new launcher/ folder) — parallel; its Setup/error pages wait for WP7's cache builder + device-fail cvar
+WP11 mod support, WP12 music tool — later, after WP10
 ```
 
 - Only one package with game runs at a time (one GPU, one game window).
@@ -135,9 +137,13 @@ One FINDINGS section each, leads marked as leads:
   shows both Optimus/PowerXpress exports; adapter log line names the dedicated card.
 - PSO seed: `tools/nr_pso_seed.py` -> `config/native/pipelines_seed.bin`.
 - Player-PC shader cache builder (BGFA unpack of `shader_big.ast`, no Python, no xex decrypt needed).
-- Device-fail test cvar (port `native_test_device_fail`) and check exit code 3 falls back to emulated.
+- Device-fail test cvar (port `native_test_device_fail`). UFC's launcher is now native-only (no emulated fallback
+  for players, `UFC Recomp/launcher/NativeRenderer.cs`, `RendererError.cs`, `FINDINGS-native-only.md`); WP10 follows
+  it, so the pass is "device failure writes `native-error.txt` and exits with a clear code the launcher can show",
+  not "falls back to emulated". The emulated renderer stays for development runs.
 - FSR: one run with the window larger than the picture, `--eamma_native_upscale=fsr` vs `bilinear`.
-- **User decision:** does EA MMA get a launcher? (plan says "only if").
+- Launcher: **decided by the user 2026-11-15: yes, same design as UFC's latest launcher**, with mod support and a
+  music tool later. See WP10-WP12.
 
 ### WP8 Performance ladder and soak (R, 4-6 runs; after WP1, WP2)
 - Guide ch. 12 "For a new game" checklist. Ladder 1x / 1.5x / 2x / 3x with `[nperf]` and `[hitch]`.
@@ -150,6 +156,44 @@ One FINDINGS section each, leads marked as leads:
 ### WP9 MSAA (optional, R; last, only on the user's go)
 - Behind `eamma_native_msaa` (default off), 4 samples on the main tiled surface, using WP4's audit.
 - Pass: boot to results clean at 1x with 4 samples, edges match emulated, cost recorded on the ladder.
+
+### WP10 Launcher, ported from UFC (mostly S; parallel with WP1-WP6; new `launcher/` folder only)
+- Source: `E:\ClaudeGame\UFC Recomp\launcher` at UFC `main` (ff06455, 2026-11-14; ~2,450 lines C# WinForms,
+  `UFC3Launcher.csproj`). Copy it, rename to `EAMMALauncher`, keep the structure: sidebar shell + `ILauncherTab` tabs
+  (`Tabs/Shell.cs`, `Theme.cs`, `Controls.cs`), `Toml.cs` (edits only its own keys), `Shots.cs`
+  (`--screenshot-all <dir>` UI check), `tests/*.ps1`.
+- Port as-is (generic): `Xgd.cs` (disc image reader; check EA MMA's XGD layout), `Stfs.cs` (DLC packages, if EA MMA
+  has DLC), `Toml.cs`, `Gpu.cs` (graphics-card pick, writes the adapter cvar), `Cpu.cs` (two-exe pick only if EA
+  MMA ships a v3 + compat build), `Updater.cs` (only once there is a release location; leave off until the user
+  names one), `AppVersion.cs`, theme/controls.
+- Rewrite for EA MMA: `Config.cs` (paths: `eamma.exe`, `eamma.toml`, `assets\`, `mods\` via the SDK's `mods_root`),
+  `Setup.cs` (title/media id check for EA Sports MMA, extract to `assets\`, then build the shader cache),
+  `ShaderCache.cs` (calls WP7's player-PC cache builder, not the Python tool), `NativeRenderer.cs` /
+  `RendererError.cs` (native-only, `eamma_` cvars), `Tabs/SettingsTab.cs` (only options EA MMA actually has: scale,
+  upscale, adapter, frame rate when WP1 allows), art (new, original art; no UFC branding).
+- Leave out for now: `Roster.cs`, `Music.cs`, `MusicTab.cs`, `ModPack.cs`/`ModPackTab.cs` (WP11/WP12), photo mode,
+  CAF points, online.
+- Needs from other packages: WP7 cache builder (Setup), WP7 device-fail cvar (error dialog), exe name/toml name
+  fixed in `CMakeLists.txt`.
+- Test: `tests/screenshots.ps1` (every page at 100% and 150% DPI), a first-run setup from the user's own disc image
+  into an empty folder, then Play reaches the menus natively; a forced device failure shows the error dialog.
+- Pass: fresh folder + disc image -> launcher -> setup -> shader cache -> Play -> fight, without the command line.
+
+### WP11 Mod support (later; game side + launcher)
+- The SDK already overrides game files from a mods folder (`EAMMA-rexglue-sdk/src/system/runtime.cpp:317`,
+  cvar `mods_root`). First check that a loose file under `mods\` replaces the disc file in EA MMA (one texture or
+  string table), then port UFC's `ModPack.cs` + `ModPackTab.cs` (zip with `modpack.json`, install writes the exact
+  file list so uninstall is clean).
+- Game-side extras gated behind a mod-pack marker, as UFC's `src/mod_pack.h` does, only when the first gameplay mod
+  exists.
+- Pass: install and uninstall a test pack through the launcher; the game shows the modded file, and stock again after.
+
+### WP12 Music tool (later; needs game research first)
+- UFC's tool (`launcher/Music.cs`, `Tabs/MusicTab.cs`, `WaveformBar.cs`) is launcher-side and generic (decode,
+  trim, loudness match, waveform walkout window, writes `fighter_music.toml`), but the game side
+  (`UFC Recomp/src/fighter_music.h`) hooks UFC's Wwise `PostEvent` walkout path. EA MMA's audio engine and walkout
+  code must be found first (static research: audio library strings in `MMADLLzf.xex.dll`, the walkout sound call).
+- Pass for the research step: a FINDINGS file naming the walkout sound call and how a replacement track could be fed.
 
 ## 4. Process rules (to stop sessions stalling)
 
