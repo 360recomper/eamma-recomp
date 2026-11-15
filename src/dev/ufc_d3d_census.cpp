@@ -35,7 +35,15 @@
 #include <string>
 #include <unordered_map>
 
+#include <algorithm>
+#include <fstream>
+#include <set>
+#include <vector>
+
+#include <windows.h>
+
 #include <fmt/format.h>
+#include <xxhash.h>
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
@@ -49,6 +57,8 @@ REXCVAR_DEFINE_BOOL(eamma_d3d_census, false, "eamma",
                     "NR-6: count the game's D3D calls per frame (draws direct / in command buffers / "
                     "in Z pass and tiling, clears, resolves, queries) and log a [census] report every "
                     "eamma_d3d_census_every frames. Observe only; the emulated GPU still draws");
+REXCVAR_DEFINE_STRING(eamma_census_shader_cache, "", "eamma",
+                      "EN-4: shader_cache.bin to check created shaders against (empty = beside the exe)");
 REXCVAR_DEFINE_INT32(eamma_d3d_census_every, 300, "eamma",
                      "eamma_d3d_census: frames (Swaps) per report")
     .range(1, 100000);
@@ -262,6 +272,64 @@ inline void OnDraw(uint8_t* base, uint32_t dev) {
           : kDeclMismatch);
 }
 
+// EN-4: every shader the game creates, hashed as the native renderer keys it (XXH3 of the whole
+// container, virtualSize + physicalSize: src/reblue/gpu/shaders/guest_shaders.cpp CreateShader) and
+// looked up in shader_cache.bin's index (header 32 bytes, entries {u64 hash, u32 x4} sorted by hash).
+struct ShaderCheck {
+  std::mutex lock;
+  bool loaded = false;
+  std::vector<uint64_t> index;
+  std::set<uint64_t> seen;
+  uint64_t hits = 0, misses = 0, creates = 0;
+};
+inline ShaderCheck g_shaders;
+
+inline void LoadShaderIndex(ShaderCheck& sc) {
+  sc.loaded = true;
+  std::string path = REXCVAR_GET(eamma_census_shader_cache);
+  if (path.empty()) {
+    char exe[MAX_PATH] = {};
+    GetModuleFileNameA(nullptr, exe, MAX_PATH);
+    path = exe;
+    path = path.substr(0, path.find_last_of("\\/") + 1) + "shader_cache.bin";
+  }
+  std::ifstream f(path, std::ios::binary);
+  char head[32] = {};
+  if (!f.read(head, 32) || std::memcmp(head, "UFCSHC01", 8) != 0) {
+    REXLOG_WARN("[census] shader check: no shader cache at {}", path);
+    return;
+  }
+  uint32_t count;
+  std::memcpy(&count, head + 12, 4);
+  sc.index.resize(count);
+  for (uint32_t i = 0; i < count; ++i) {
+    char e[24];
+    if (!f.read(e, 24)) break;
+    std::memcpy(&sc.index[i], e, 8);
+  }
+  std::sort(sc.index.begin(), sc.index.end());
+  REXLOG_INFO("[census] shader check: {} shaders in {}", sc.index.size(), path);
+}
+
+inline void OnShaderCreate(uint8_t* base, uint32_t container, bool pixel) {
+  if (!Plausible(container)) return;
+  const uint32_t len = Load32(base, container + 4) + Load32(base, container + 8);
+  if (len > (1u << 20)) return;
+  const uint64_t hash = XXH3_64bits(base + container, len);
+  ShaderCheck& sc = g_shaders;
+  std::lock_guard<std::mutex> guard(sc.lock);
+  if (!sc.loaded) LoadShaderIndex(sc);
+  ++sc.creates;
+  if (!sc.seen.insert(hash).second) return;
+  if (std::binary_search(sc.index.begin(), sc.index.end(), hash)) {
+    ++sc.hits;
+  } else {
+    ++sc.misses;
+    REXLOG_WARN("[census] shader miss {} {:016X} (len {}, magic {:08X})", pixel ? "PS" : "VS", hash, len,
+                Load32(base, container));
+  }
+}
+
 inline uint64_t Take(std::atomic<uint64_t>& a) { return a.exchange(0, std::memory_order_relaxed); }
 
 inline void OnSwap() {
@@ -315,6 +383,11 @@ inline void OnSwap() {
     line += fmt::format(" {}={:.1f}", kFnName[i], double(calls[i]) / f);
   }
   REXLOG_INFO("[census] frame {}: calls/frame{}", w.frame_index, line);
+  {
+    std::lock_guard<std::mutex> sg(g_shaders.lock);
+    REXLOG_INFO("[census] frame {}: shaders created {} ({} unique): {} in the cache, {} missing", w.frame_index,
+                g_shaders.creates, g_shaders.seen.size(), g_shaders.hits, g_shaders.misses);
+  }
   w.frames = 0;
   w.total = 0;
   w.min = UINT32_MAX;
@@ -344,8 +417,6 @@ EAMMA_CENSUS_COUNT(D3DDevice_SetVertexShaderConstantF, kSetVsConstF)
 EAMMA_CENSUS_COUNT(D3DDevice_SetPixelShaderConstantF, kSetPsConstF)
 EAMMA_CENSUS_COUNT(D3DVertexBuffer_Unlock, kVbUnlock)
 EAMMA_CENSUS_COUNT(D3DIndexBuffer_Unlock, kIbUnlock)
-EAMMA_CENSUS_COUNT(D3DDevice_CreateVertexShader, kCreateVs)
-EAMMA_CENSUS_COUNT(D3DDevice_CreatePixelShader, kCreatePs)
 EAMMA_CENSUS_COUNT(D3DDevice_CreateVertexDeclaration, kCreateDecl)
 EAMMA_CENSUS_COUNT(D3DDevice_BeginCommandBuffer, kBeginCb)
 EAMMA_CENSUS_COUNT(D3DDevice_EndCommandBuffer, kEndCb)
@@ -579,4 +650,23 @@ extern "C" REX_FUNC(D3DQuery_Issue) {
     uc::Add(type == 9 ? uc::kQueryOcclusion : uc::kQueryOther);
   }
   __imp__D3DQuery_Issue(ctx, base);
+}
+
+// CreateVertexShader / CreatePixelShader(pFunction): the container is r3 (as the native hook reads it).
+REX_EXTERN(__imp__D3DDevice_CreateVertexShader);
+extern "C" REX_FUNC(D3DDevice_CreateVertexShader) {
+  if (uc::On()) {
+    uc::Count(uc::kCreateVs);
+    uc::OnShaderCreate(base, ctx.r3.u32, false);
+  }
+  __imp__D3DDevice_CreateVertexShader(ctx, base);
+}
+
+REX_EXTERN(__imp__D3DDevice_CreatePixelShader);
+extern "C" REX_FUNC(D3DDevice_CreatePixelShader) {
+  if (uc::On()) {
+    uc::Count(uc::kCreatePs);
+    uc::OnShaderCreate(base, ctx.r3.u32, true);
+  }
+  __imp__D3DDevice_CreatePixelShader(ctx, base);
 }

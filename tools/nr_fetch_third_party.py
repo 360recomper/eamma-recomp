@@ -3,7 +3,7 @@
     python -I tools/nr_fetch_third_party.py [--from-dir DIR]
 
 Clones plume and reblue-XenosRecomp (with submodules) into third_party/, checks out the pins and
-applies patches/plume.patch, patches/plume-gpu-pick.patch (NR-12c adapter pick), patches/plume-texture-pool.patch (NR-14d), patches/xenosrecomp.patch (SvR 2010's), patches/xenosrecomp-ufc.patch, patches/xenosrecomp-ufc2.patch, patches/xenosrecomp-ufc3.patch, patches/xenosrecomp-ufc4.patch, patches/xenosrecomp-ufc5.patch and patches/xenosrecomp-ufc6.patch
+applies patches/plume.patch, patches/plume-gpu-pick.patch (NR-12c adapter pick), patches/plume-texture-pool.patch (NR-14d), patches/xenosrecomp.patch (SvR 2010's), patches/xenosrecomp-ufc.patch, patches/xenosrecomp-ufc2.patch, patches/xenosrecomp-ufc3.patch, patches/xenosrecomp-ufc4.patch, patches/xenosrecomp-ufc5.patch patches/xenosrecomp-ufc6.patch and patches/xenosrecomp-eamma.patch (EA MMA: two-shader VS, TEXCOORD7)
 (UFC's shaders on top, NR-7). A folder that already holds the right
 commit is only reset and re-patched. --from-dir takes the clones from a local folder that has
 plume/ and XenosRecomp/ (e.g. another recomp's third_party) instead of GitHub; it is copied, so
@@ -23,7 +23,7 @@ REPOS = [
     ("plume", "https://github.com/zolaware/plume.git", "e0c8871", ["plume.patch", "plume-gpu-pick.patch", "plume-texture-pool.patch"]),
     ("XenosRecomp", "https://github.com/zolaware/reblue-XenosRecomp.git", "339af41",
      ["xenosrecomp.patch", "xenosrecomp-ufc.patch", "xenosrecomp-ufc2.patch", "xenosrecomp-ufc3.patch", "xenosrecomp-ufc4.patch",
-      "xenosrecomp-ufc5.patch", "xenosrecomp-ufc6.patch"]),
+      "xenosrecomp-ufc5.patch", "xenosrecomp-ufc6.patch", "xenosrecomp-eamma.patch"]),
 ]
 
 

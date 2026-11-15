@@ -1,6 +1,6 @@
 # EA Sports MMA - native renderer plan
 
-Status 2026-11-15 (branch `native`): EN-0 to EN-3 done; next is EN-4 (shader cache). See "Progress" at the end. Source: `E:\ClaudeGame\UFC-native\docs\NATIVE-RENDERER-GUIDE.md`
+Status 2026-11-15 (branch `native`): EN-0 to EN-4 done; next is EN-5 (device, present, menus). See "Progress" at the end. Source: `E:\ClaudeGame\UFC-native\docs\NATIVE-RENDERER-GUIDE.md`
 ("the guide"; chapter numbers below are its chapters). Port **UFC's tree** (`E:\ClaudeGame\UFC Recomp`, native code in
 `src/reblue/` + `src/native/`), not SvR's, as the guide says (ch. 1). Written 2026-11-14 while this tree first reached a fight on
 the emulated renderer (NOTES.md).
@@ -141,3 +141,10 @@ junction to the only copy of the disc extract - never delete or clean recursivel
   Device VS/PS/decl offsets proven (85,192/85,192). New for EN-5: **SetVS/PSConstantF are never called**: shader
   constants reach the GPU another way; check where before trusting the device's constant blocks.
   Build folder is in the census configuration (hooks off, census on) after these runs.
+- **EN-4 done** (`FINDINGS-en4-shaders.md`). `python -I tools/nr_build_shader_cache.py` builds the cache from
+  shader_big.ast in ~4 s: 417/418 shaders, 842 prelinked variants (`patches/xenosrecomp-eamma.patch`: two-shader VS,
+  TEXCOORD7). Run-time key check (census at CreateVS/PS, emulated): 287 of 288 shaders the game creates up to a
+  fight are in the cache; the miss is the light-shaft PS (loop count = run-time integer constant i16).
+  EN-5 list: (1) where the game's shader constants live (no ConstantF calls), (2) integer loop constants for
+  light shafts, (3) present on Swap (no Present), (4) app bridge + `eamma_command_buffers=false` with native,
+  (5) audit Blue Dragon guest addresses in generic code (Progress, EN-2).

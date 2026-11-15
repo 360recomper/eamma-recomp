@@ -1,0 +1,33 @@
+diff --git a/XenosRecomp/main.cpp b/XenosRecomp/main.cpp
+index 8c51476..05b2602 100644
+--- a/XenosRecomp/main.cpp	
++++ b/XenosRecomp/main.cpp	
+@@ -174,8 +174,11 @@ int main(int argc, char** argv)
+ 
+                 if ((shaderContainer->flags & 0xFFFFFF00) == 0x102A1100 &&
+                     dataSize <= (fileSize - i) &&
+-                    shaderContainer->field1C == 0 &&
+-                    shaderContainer->field20 == 0)
++                    // EA MMA: flag 0x20 = a vertex shader with a second, position-only shader
++                    // (+0x1C/+0x20 point at it, after the main microcode). The main shader is
++                    // translated; the hash still covers the whole container.
++                    ((shaderContainer->field1C == 0 && shaderContainer->field20 == 0) ||
++                     (shaderContainer->flags & 0x20) != 0))
+                 {
+                     XXH64_hash_t hash = XXH3_64bits(shaderContainer, dataSize);
+                     auto shader = shaders.try_emplace(hash);
+diff --git a/XenosRecomp/shader_common.h b/XenosRecomp/shader_common.h
+index 6d8a497..434d03b 100644
+--- a/XenosRecomp/shader_common.h	
++++ b/XenosRecomp/shader_common.h	
+@@ -36,7 +36,9 @@
+     X(BlendIndices,  1, 16) \
+     X(Color,         2, 17) \
+     X(PointSize,     0, 18) \
+-    X(Binormal,      0, 19)
++    X(Binormal,      0, 19) \
++    X(TexCoord,      7, 20)
++// EA MMA: TEXCOORD7 (22 character vertex shaders) at 20.
+ // UFC 3: locations 16-19 (second bone set, COLOR2, PSIZE, BINORMAL) go past Vulkan's guaranteed 16;
+ // fine on D3D12 (32 inputs), the only API UFC's native renderer builds.
+ 
