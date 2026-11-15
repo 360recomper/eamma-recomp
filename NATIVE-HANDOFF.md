@@ -1,6 +1,7 @@
 # EA MMA native renderer: handoff (2026-11-15)
 
-Read this first in a new session, then `NATIVE-ISSUES.md` (open issues + mistakes), then the FINDINGS file for the
+**Remaining work is planned in `NATIVE-FINISH-DESIGN.md` (work packages WP0-WP9, order, process rules); start
+there.** Read this first in a new session, then `NATIVE-ISSUES.md` (open issues + mistakes), then the FINDINGS file for the
 step you touch. The user wants work to continue step to step without asking for a go-ahead; commit locally, never push.
 
 ## Where things are
