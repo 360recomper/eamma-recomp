@@ -395,6 +395,7 @@ plume::RenderFormat ConvertDeclType(D3DDeclType type) {
     return plume::RenderFormat::R16G16B16A16_UNORM;
   case D3DDeclType::kUInt1:
     return plume::RenderFormat::R32_UINT;
+  case D3DDeclType::kDec3N:  // EA MMA, decoded in the shader (kSpecConstantDec3nNormal)
   case D3DDeclType::kDec3NAlt:
   case D3DDeclType::kDec3NAlt2:
   case D3DDeclType::kDhen3N:

@@ -112,12 +112,14 @@ u32 D3DDevice_Swap_hook(u32 /*device*/, u32 front_buffer_va,
 #if defined(SVR_NATIVE_RENDERER)
   // Dev aid: SVR_PRESENT_TARGET=<guest texture address> presents that resolve target instead of
   // the front buffer (to look at an intermediate, e.g. the depth copy post-processing samples).
-  static const u32 present_override = [] {
-    const char *env = std::getenv("SVR_PRESENT_TARGET");
-    return env ? u32(std::strtoul(env, nullptr, 16)) : 0u;
-  }();
+  static const char *present_env = std::getenv("SVR_PRESENT_TARGET");
+  static const u32 present_override = present_env ? u32(std::strtoul(present_env, nullptr, 16)) : 0u;
   if (present_override)
     front_buffer_va = present_override;
+  // EA MMA dev aid: SVR_PRESENT_TARGET=tiled presents the tiled 3D scene's last colour resolve.
+  if (present_env && std::strcmp(present_env, "tiled") == 0)
+    if (const u32 t = bd::gpu::g_svr_last_tiled_resolve.load(std::memory_order_relaxed))
+      front_buffer_va = t;
   auto *front_buffer = bd::gpu::SvrResolveTarget(front_buffer_va);
 #else
   auto *front_buffer =

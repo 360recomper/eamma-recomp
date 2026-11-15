@@ -201,6 +201,11 @@ GuestVertexDeclaration *CreateVertexDeclaration(GuestVertexElement *elements) {
         decl->hasR11G11B10Normal = true;
         if (g_vulkan)
           input.format = plume::RenderFormat::R32_FLOAT;
+      } else if (type == D3DDeclType::kDec3N) {
+        // EA MMA: three signed 10-bit lanes, decoded by the kSpecConstantDec3nNormal branch.
+        decl->hasDec3nNormal = true;
+        if (g_vulkan)
+          input.format = plume::RenderFormat::R32_FLOAT;
       } else if (type == D3DDeclType::kDhen3N) {
         // SvR's packed normal, one 32-bit lane decoded by the kSpecConstantDhen3nNormal branch.
         decl->hasDhen3nNormal = true;

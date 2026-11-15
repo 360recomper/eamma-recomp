@@ -235,11 +235,14 @@ void D3DDevice_SetVertexDeclaration_hook(u32 /*device*/, u32 decl_guest) {
   {
     auto &s = bd::gpu::state();
     u32 spec = s.pipelineState.specConstants &
-               ~(bd::gpu::kSpecConstantR11G11B10Normal | bd::gpu::kSpecConstantDhen3nNormal);
+               ~(bd::gpu::kSpecConstantR11G11B10Normal | bd::gpu::kSpecConstantDhen3nNormal |
+                 bd::gpu::kSpecConstantDec3nNormal);
     if (decl && decl->hasR11G11B10Normal)
       spec |= bd::gpu::kSpecConstantR11G11B10Normal;
     if (decl && decl->hasDhen3nNormal)
       spec |= bd::gpu::kSpecConstantDhen3nNormal;
+    if (decl && decl->hasDec3nNormal)
+      spec |= bd::gpu::kSpecConstantDec3nNormal;
     bd::gpu::Video::SetDirtyValue<u32>(s.dirtyStates.pipelineState,
                                        s.pipelineState.specConstants, spec);
   }
@@ -347,6 +350,20 @@ constexpr float kAlphaRefScale = 1.0f / 256.0f; // ALPHAREF is 0..255
 } // namespace
 
 #if defined(SVR_NATIVE_RENDERER)
+// EA MMA (EN-5): bind the device's current RT0 / depth surfaces again (their host copies changed).
+void EammaRebindTargets(u32 device_guest) {
+  auto *dev = bd::mem::try_at<bd::gpu::D3DDevice>(device_guest);
+  if (!dev)
+    return;
+  const u32 rt = dev->renderTargetShadow[0];
+  const u32 ds = dev->depthStencilShadow;
+  rex::MappedPtr<bd::gpu::D3DDevice> pdev(dev, device_guest);
+  D3DDevice_SetRenderTarget_hook(
+      pdev, 0, rex::MappedPtr<bd::gpu::D3DSurface>(bd::mem::try_at<bd::gpu::D3DSurface>(rt), rt));
+  D3DDevice_SetDepthStencilSurface_hook(
+      pdev, rex::MappedPtr<bd::gpu::D3DSurface>(bd::mem::try_at<bd::gpu::D3DSurface>(ds), ds));
+}
+
 namespace {
 bd::gpu::GuestTexture *g_mirror_saved_textures[kUfcMirrorTextures];
 }

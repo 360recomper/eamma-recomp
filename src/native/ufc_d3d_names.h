@@ -36,6 +36,9 @@
 #define D3DDevice_EndVertices                 sub_8830E548
 #define D3DDevice_DrawVertices                sub_8830E5A0
 #define D3DDevice_DrawIndexedVertices         sub_8830E990
+// EA only: BeginVertices + memcpy + EndVertices *inlined*, so EndVertices' hook never sees these
+// draws (the attract / logo movies are one such quad a frame). Hooked in gpu/hooks/draw.cpp.
+#define D3DDevice_DrawVerticesUP              sub_8830E558
 
 // Buffers: matched but NOT mapped (gpu/hooks/resource.cpp's REX_HOOKs would replace them):
 // D3DDevice_CreateVertexBuffer sub_8830D2A0, D3DDevice_CreateIndexBuffer sub_8830D3C8,
@@ -57,6 +60,8 @@
 #define D3DDevice_SetIndices                  sub_8830C018
 #define D3DDevice_SetVertexShaderConstantF    sub_88310AB0
 #define D3DDevice_SetPixelShaderConstantF     sub_88310B88
+// EA's real constant path (EN-5): LOAD_ALU_CONSTANT from a memory pointer, see eamma_constant_loads.cpp.
+#define D3DDevice_GpuLoadShaderConstantF4Pointer sub_883198E0
 
 // Recorded work (one record site and one replay site in the game, FINDINGS-en1 §5)
 #define D3DDevice_BeginCommandBuffer          sub_8831CEB0
@@ -88,6 +93,7 @@
 #define __imp__D3DDevice_EndVertices          __imp__sub_8830E548
 #define __imp__D3DDevice_DrawVertices         __imp__sub_8830E5A0
 #define __imp__D3DDevice_DrawIndexedVertices  __imp__sub_8830E990
+#define __imp__D3DDevice_DrawVerticesUP       __imp__sub_8830E558
 #define __imp__D3DDevice_CreateVertexDeclaration __imp__sub_883116C0
 #define __imp__D3DDevice_CreateVertexShader   __imp__sub_88311238
 #define __imp__D3DDevice_CreatePixelShader    __imp__sub_88310E58
@@ -98,6 +104,7 @@
 #define __imp__D3DDevice_SetIndices           __imp__sub_8830C018
 #define __imp__D3DDevice_SetVertexShaderConstantF __imp__sub_88310AB0
 #define __imp__D3DDevice_SetPixelShaderConstantF  __imp__sub_88310B88
+#define __imp__D3DDevice_GpuLoadShaderConstantF4Pointer __imp__sub_883198E0
 #define __imp__D3DVertexBuffer_Unlock         __imp__sub_8830D3B8
 #define __imp__D3DIndexBuffer_Unlock          __imp__sub_8830D4C0
 #define __imp__D3DDevice_BeginCommandBuffer   __imp__sub_8831CEB0

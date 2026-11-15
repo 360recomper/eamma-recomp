@@ -6,6 +6,8 @@
 
 #include <rex/cvar.h>
 #include <rex/filesystem.h>
+#include <rex/logging.h>
+#include <rex/logging/api.h>
 #include <rex/rex_app.h>
 #include <rex/system/gpu_plugin.h>
 #include <rex/system/kernel_state.h>
@@ -13,6 +15,7 @@
 
 #include <windows.h>
 
+#include <filesystem>
 #include <string>
 
 // Defaults Fight Night Champion (same EA engine family) runs with, from FNC Reborn's FNCReborn.toml
@@ -91,6 +94,8 @@ class EammaApp : public rex::ReXApp {
   }
 
   // Native when asked for and compiled in; every other case runs the emulated renderer.
+  static bool OnCommandLine(const char* name) { return eamma_defaults::OnCommandLine(name); }
+
   static bool LatchRenderer() {
     const std::string& renderer = REXCVAR_GET(eamma_renderer);
     if (renderer == "native") {
@@ -111,6 +116,23 @@ class EammaApp : public rex::ReXApp {
 
   void OnPreSetup(rex::RuntimeConfig& config) override {
     native_ = LatchRenderer();
+#if defined(EAMMA_NATIVE_HOOKS)
+    if (native_ && !native_bridge_.Load()) native_ = false;
+    if (native_) {
+      native_bridge_.enable(true);
+      // EN-3: the game's command-buffer objects are drawn directly (its own fallback path), so the
+      // renderer sees every draw through the hooked draw calls.
+      if (!OnCommandLine("eamma_command_buffers")) rex::cvar::SetFlagByName("eamma_command_buffers", "false");
+      // The Xenos plugin's null backend keeps the game's D3D command stream moving (fences,
+      // interrupts, vblank) without drawing; the hooks draw through plume.
+      if (!config.graphics) {
+        config.graphics = rex::system::LoadGpuPlugin("xenos", "null");
+        config.gpu_plugin = "xenos";
+        REXLOG_INFO("native: guest GPU {}", config.graphics ? "null (sync only)" : "MISSING");
+      }
+      return;
+    }
+#endif
     eamma_defaults::Apply();
     // Xenos GPU emulation is a runtime-loaded plugin in v0.10; without it there is no GPU.
     if (!config.graphics) {
@@ -127,6 +149,58 @@ class EammaApp : public rex::ReXApp {
       REXLOG_WARN("could not enable gpu_allow_invalid_fetch_constants");
     }
   }
+#if defined(EAMMA_NATIVE_HOOKS)
+  // Exit code when the native device can't be created (UFC's launcher restarts on emulated).
+  static constexpr int kNativeDeviceFailedExitCode = 3;
+
+  void OnPreLaunchModule() override {
+    if (!native_) return;
+    std::filesystem::path dir = rex::filesystem::GetExecutableFolder();
+    const std::string log_file = rex::cvar::GetFlagByName("log_file");
+    if (!log_file.empty() && !std::filesystem::path(log_file).parent_path().empty())
+      dir = std::filesystem::path(log_file).parent_path();
+    native_bridge_.crash_trace(dir.string().c_str());
+    REXLOG_INFO("native: crash and hang traces go to {}", dir.string());
+    if (!native_bridge_.create_device(window())) {
+      REXLOG_ERROR("native: host device creation failed; restart with --eamma_renderer=emulated");
+      rex::FlushLogging();
+      std::_Exit(kNativeDeviceFailedExitCode);
+    }
+  }
+
+  void OnWindowPixelSizeChanged(uint32_t w, uint32_t h) override {
+    if (!native_) {
+      rex::ReXApp::OnWindowPixelSizeChanged(w, h);
+      return;
+    }
+    native_bridge_.request_resize();
+  }
+#endif
+
  private:
   bool native_ = false;
+#if defined(EAMMA_NATIVE_HOOKS)
+  // The renderer is in the game DLL (src/native/eamma_bridge.cpp). Loading it here gives the same
+  // module the SDK loads for the game later (same path, LoadLibrary reference count).
+  struct NativeBridge {
+    void (*enable)(bool) = nullptr;
+    void (*crash_trace)(const char*) = nullptr;
+    bool (*create_device)(rex::ui::Window*) = nullptr;
+    void (*request_resize)() = nullptr;
+    bool Load() {
+      const auto path = rex::filesystem::GetExecutableFolder() / "eamma_MMADLLzf_xex.dll";
+      HMODULE m = LoadLibraryW(path.wstring().c_str());
+      if (m) {
+        enable = reinterpret_cast<void (*)(bool)>(GetProcAddress(m, "EammaNativeEnable"));
+        crash_trace = reinterpret_cast<void (*)(const char*)>(GetProcAddress(m, "EammaNativeInstallCrashTrace"));
+        create_device = reinterpret_cast<bool (*)(rex::ui::Window*)>(GetProcAddress(m, "EammaNativeCreateDevice"));
+        request_resize = reinterpret_cast<void (*)()>(GetProcAddress(m, "EammaNativeRequestResize"));
+      }
+      const bool ok = enable && crash_trace && create_device && request_resize;
+      if (!ok) REXLOG_ERROR("native: renderer exports missing in {}, using the emulated renderer", path.string());
+      return ok;
+    }
+  };
+  NativeBridge native_bridge_;
+#endif
 };

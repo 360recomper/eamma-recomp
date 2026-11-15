@@ -50,6 +50,12 @@ REXCVAR_DEFINE_BOOL(eamma_native_writeback_gone, false, "eamma",
                     "gone to another guest allocation (pages still unchanged only). The CAF editor's "
                     "face needs pixels to survive that (run nrb4c shows a face with it, wrong colours; "
                     "without it the face is black), but it also lands old pixels in new textures");
+REXCVAR_DEFINE_INT32(eamma_native_wb_eager_frames, 8, "eamma",
+                     "EA MMA (EN-5): write each resolve back to guest memory right after it, as the "
+                     "emulated readback_resolve=smart does, unless the same rect was resolved every frame "
+                     "for this many frames (then it waits for a reader, as UFC). EA's boot stalls with "
+                     "on-demand write-back alone. -1 = off (UFC behaviour)")
+    .range(-1, 1000000);
 REXCVAR_DEFINE_INT32(eamma_native_wb_dump, 0, "eamma",
                      "Dev (NR-10g): dump this many resolve write-back jobs (level 0, 512 px or wider) to "
                      "nr10_dump beside the log file: wbNNNN_host.bin = the host readback rows, "
@@ -1719,6 +1725,34 @@ void UfcWritebackNoteResolve(u32 dest_va, GuestTexture *host, const GuestTexture
         }
   }
   SetPending(rect.first, rect.end);
+  // EN-5 eager write-back (eamma_native_wb_eager_frames): new or changing resolves go to guest memory
+  // now, like the emulated smart readback; a rect resolved every frame for N frames waits for a reader.
+  if (const i32 steady_limit = REXCVAR_GET(eamma_native_wb_eager_frames); steady_limit >= 0) {
+    struct Steady {
+      u64 frame = ~0ull;
+      u32 frames = 0;
+    };
+    static std::mutex s_steady_mutex;
+    static std::unordered_map<u64, Steady> s_steady;
+    const u64 frame = SvrFrameIndex();
+    bool eager = true;
+    {
+      std::lock_guard g(s_steady_mutex);
+      Steady &st = s_steady[key ^ (u64(rect.x0) << 48) ^ (u64(rect.y0) << 32) ^ (u64(rect.x1) << 16) ^ rect.y1];
+      if (st.frame != frame) {
+        st.frames = st.frame + 1 == frame ? st.frames + 1 : 0;
+        st.frame = frame;
+      }
+      eager = st.frames < u32(steady_limit);
+    }
+    if (eager) {
+      memory->EnablePhysicalMemoryReadWatch(
+          rect.first & ~(kPage - 1),
+          u32(rex::align<uint64_t>(rect.end, kPage)) - (rect.first & ~(kPage - 1)));
+      UfcResolveToGuestPhysical(rect.first, rect.end - rect.first, "eager");
+      return;
+    }
+  }
   const bool any = memory->EnablePhysicalMemoryReadWatch(
       rect.first & ~(kPage - 1),
       u32(rex::align<uint64_t>(rect.end, kPage)) - (rect.first & ~(kPage - 1)));

@@ -281,6 +281,7 @@ DWORD WINAPI SamplerThread(LPVOID param) {
   FILE *f = OpenLog("native_samples.txt");
   if (!f)
     return 0;
+  setvbuf(f, nullptr, _IONBF, 0);  // EA MMA: test runs end with a kill; keep every sample
   const DWORD self_pid = GetCurrentProcessId();
   const DWORD self_tid = GetCurrentThreadId();
   const ULONGLONG start = GetTickCount64();

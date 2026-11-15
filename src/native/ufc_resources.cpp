@@ -350,6 +350,39 @@ float SvrAreaScale() {
 
 bool SvrWholeScaleOnly() { return Ratio().whole_only; }
 
+// EA MMA (EN-5): predicated tiling. The game renders its 3D scene into a tile-sized EDRAM surface
+// (1280x256) between BeginTiling and EndTiling, and resolves each tile from its screen rect
+// (0,256-1280,512, ...). The GPU replays the draws once per tile with a window offset; the native
+// renderer draws them once, so the host copy of such a surface is made as large as all the tiles.
+namespace {
+struct TiledExtent {
+  u32 width = 0, height = 0;
+};
+std::unordered_map<u32, TiledExtent> g_tiled_extent;  // guarded by g_mutex
+}  // namespace
+
+bool SvrNoteTiledSurface(u32 surface_va, u32 width, u32 height) {
+  if (!surface_va || !width || !height)
+    return false;
+  std::lock_guard lock(g_mutex);
+  TiledExtent &e = g_tiled_extent[surface_va];
+  if (width <= e.width && height <= e.height)
+    return false;
+  e.width = std::max(e.width, width);
+  e.height = std::max(e.height, height);
+  BD_INFO("SvR surface 0x{:08X}: tiled extent {}x{}", surface_va, e.width, e.height);
+  if (auto it = g_surfaces.find(surface_va); it != g_surfaces.end()) {
+    RetireHost(it->second.host);
+    g_surfaces.erase(it);
+  }
+  return true;
+}
+
+bool SvrIsTiledSurface(u32 surface_va) {
+  std::lock_guard lock(g_mutex);
+  return g_tiled_extent.count(surface_va) != 0;
+}
+
 GuestTexture *SvrResolveSurface(u32 surface_va) {
   if (!surface_va)
     return nullptr;
@@ -368,8 +401,12 @@ GuestTexture *SvrResolveSurface(u32 surface_va) {
     RetireHost(it->second.host);
     g_surfaces.erase(it);
   }
-  const u32 width = (bits >> 18) + 1;
-  const u32 height = ((bits >> 3) & 0x7FFF) + 1;
+  u32 width = (bits >> 18) + 1;
+  u32 height = ((bits >> 3) & 0x7FFF) + 1;
+  if (auto e = g_tiled_extent.find(surface_va); e != g_tiled_extent.end()) {
+    width = std::max(width, e->second.width);
+    height = std::max(height, e->second.height);
+  }
   const bool keep1x = Keep1xSurface(width, height, format);
   const u32 host_width = keep1x ? width : u32(ScaleUp(i32(width)));
   const u32 host_height = keep1x ? height : u32(ScaleUp(i32(height)));

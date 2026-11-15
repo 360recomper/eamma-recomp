@@ -72,6 +72,7 @@ enum Fn : int {
   kSetVertexShader, kSetPixelShader, kSetVertexDeclaration, kSetTexture, kSetStreamSource,
   kSetIndices, kSetVsConstF, kSetPsConstF, kVbUnlock, kIbUnlock, kCreateVs, kCreatePs, kCreateDecl,
   kBeginCb, kEndCb, kRunCb, kCbPaired, kBeginZPass, kEndZPass, kBeginTiling, kEndTiling,
+  kSetConst0, kSetConst1, kSetConst2, kSetConst3, kSetVsConstI, kSetPsConstI, kSetVsConstB, kSetPsConstB,
   kQueryIssue, kQueryGetData, kDrawUP, kInt3, kInt4, kInt0, kInt1, kInt2, kClearDraw, kSwapDraw, kGprAlloc, kFnCount
 };
 constexpr const char* kFnName[kFnCount] = {
@@ -80,7 +81,8 @@ constexpr const char* kFnName[kFnCount] = {
     "DrawIndexedVertices", "SetVS", "SetPS", "SetDecl", "SetTexture", "SetStreamSource",
     "SetIndices", "SetVSConstF", "SetPSConstF", "VBUnlock", "IBUnlock", "CreateVS", "CreatePS",
     "CreateDecl", "BeginCB", "EndCB", "RunCB", "CB_8831D880", "BeginZPass", "EndZPass",
-    "BeginTiling", "EndTiling", "QueryIssue", "QueryGetData", "DrawVerticesUP", "Call_88320C20",
+    "BeginTiling", "EndTiling", "SetConstPkt_88460D40", "SetConstPkt_887DC600", "SetConstPkt_88E2D3A8",
+    "SetConstPkt_88E2E1E8", "SetVSConstI", "SetPSConstI", "SetVSConstB", "SetPSConstB", "QueryIssue", "QueryGetData", "DrawVerticesUP", "Call_88320C20",
     "unused", "Draw_88320378", "Draw_8830D5C0", "Draw_8830D718", "ClearDraw_8830EDE0", "SwapDraw_8832A148",
     "SetShaderGPRAllocation"};
 
@@ -102,6 +104,7 @@ enum Tally : int {
   kGprDraws,       // draw packets in SetShaderGPRAllocation's three INDIRECT_BUFFERs (24-point flush)
   kVsMatch, kVsMismatch, kPsMatch, kPsMismatch, kDeclMatch, kDeclMismatch,
   kQueryOcclusion, kQueryOther,
+  kVsBlockChanged, kPsBlockChanged, kVsDirty, kPsDirty,  // EN-5: device constant blocks at draws
   kTallyCount
 };
 
@@ -111,6 +114,7 @@ inline std::atomic<uint32_t> g_frame_draws{0};  // gpu-like draws since the last
 inline std::atomic<uint32_t> g_last_vs{0}, g_last_ps{0}, g_last_decl{0};
 inline std::atomic<int32_t> g_in_zpass{0}, g_in_tiling{0};
 inline std::atomic<bool> g_dumped_device{false};
+inline std::atomic<uint64_t> g_last_vs_block{0}, g_last_ps_block{0};
 
 struct Window {
   std::mutex lock;
@@ -252,8 +256,42 @@ inline void DumpDeviceOnce(uint8_t* base, uint32_t dev) {
               Load32(base, dev + ufc3::d3d::kBackBuffer));
 }
 
+// EN-5: what reaches the ring between two draws (where EA's shader constants travel). The ring
+// range since the previous draw is walked; type-3 opcodes are counted, and the first constant
+// packets are logged: SET_CONSTANT 0x2D {index (type in [18:16], offset in [10:0]), data...},
+// LOAD_ALU_CONSTANT 0x2F {address, type|offset, size}, SET_CONSTANT2 0x55.
+inline std::atomic<uint32_t> g_last_ring{0};
+inline uint32_t g_ring_ops[128];
+inline std::mutex g_ring_lock;
+inline uint32_t g_ring_logged = 0;
+inline void ScanRingSinceLastDraw(uint8_t* base, uint32_t dev) {
+  const uint32_t ring = Load32(base, dev + ufc3::d3d::kRing);
+  const uint32_t last = g_last_ring.exchange(ring, std::memory_order_relaxed);
+  if (!last || ring <= last || ring - last > 0x20000) return;
+  std::lock_guard<std::mutex> guard(g_ring_lock);
+  const uint32_t va = last + 4, dwords = (ring - last) / 4;
+  if (!Readable(va, dwords)) return;
+  for (uint32_t i = 0; i < dwords;) {
+    const uint32_t h = Load32(base, va + 4 * i);
+    const uint32_t type = h >> 30;
+    if (type == 0) { i += 2 + ((h >> 16) & 0x3FFF); continue; }
+    if (type == 1) { i += 3; continue; }
+    if (type == 2) { i += 1; continue; }
+    const uint32_t op = (h >> 8) & 0x7F, count = ((h >> 16) & 0x3FFF) + 1;
+    ++g_ring_ops[op];
+    if ((op == 0x2D || op == 0x2F || op == 0x55 || op == 0x2E) && g_ring_logged < 40 && i + 3 < dwords) {
+      ++g_ring_logged;
+      REXLOG_INFO("[census] ring op {:02X} count {} words {:08X} {:08X} {:08X} (vs {:08X})", op, count,
+                  Load32(base, va + 4 * (i + 1)), Load32(base, va + 4 * (i + 2)), Load32(base, va + 4 * (i + 3)),
+                  Load32(base, dev + ufc3::d3d::kVertexShader));
+    }
+    i += 1 + count;
+  }
+}
+
 // Every draw call: where it goes, and the device-state cross-check.
 inline void OnDraw(uint8_t* base, uint32_t dev) {
+  ScanRingSinceLastDraw(base, dev);
   if (Load32(base, dev + ufc3::d3d::kRecordingCommandBuffer)) {
     Add(kRecorded);
     return;
@@ -270,6 +308,14 @@ inline void OnDraw(uint8_t* base, uint32_t dev) {
   Add(Load32(base, dev + ufc3::d3d::kVertexDeclaration) == g_last_decl.load(std::memory_order_relaxed)
           ? kDeclMatch
           : kDeclMismatch);
+  // EN-5: do the device's float constant blocks change from draw to draw (inline setters write them),
+  // and are their dirty masks set (m_Mask[0] = VS, [1] = PS; the ConstantF setters OR into them)?
+  const uint64_t vs = XXH3_64bits(base + dev + ufc3::d3d::kVsFloatConstants, 256 * 16);
+  const uint64_t ps = XXH3_64bits(base + dev + ufc3::d3d::kPsFloatConstants, 256 * 16);
+  if (g_last_vs_block.exchange(vs, std::memory_order_relaxed) != vs) Add(kVsBlockChanged);
+  if (g_last_ps_block.exchange(ps, std::memory_order_relaxed) != ps) Add(kPsBlockChanged);
+  if (Load32(base, dev + 0) | Load32(base, dev + 4)) Add(kVsDirty);
+  if (Load32(base, dev + 8) | Load32(base, dev + 12)) Add(kPsDirty);
 }
 
 // EN-4: every shader the game creates, hashed as the native renderer keys it (XXH3 of the whole
@@ -377,12 +423,23 @@ inline void OnSwap() {
   REXLOG_INFO("[census] frame {}: device check VS +0x3248 {}/{} match, PS +0x3244 {}/{}, decl +0x2ED8 {}/{}",
               w.frame_index, t[kVsMatch], t[kVsMatch] + t[kVsMismatch], t[kPsMatch], t[kPsMatch] + t[kPsMismatch],
               t[kDeclMatch], t[kDeclMatch] + t[kDeclMismatch]);
+  REXLOG_INFO("[census] frame {}: constants at {} direct draws: VS block +0x780 changed {}, PS block +0x1780 "
+              "changed {}; dirty mask set VS {} PS {}",
+              w.frame_index, t[kDirect], t[kVsBlockChanged], t[kPsBlockChanged], t[kVsDirty], t[kPsDirty]);
   std::string line;
   for (int i = 0; i < kFnCount; ++i) {
     if (!calls[i]) continue;
     line += fmt::format(" {}={:.1f}", kFnName[i], double(calls[i]) / f);
   }
   REXLOG_INFO("[census] frame {}: calls/frame{}", w.frame_index, line);
+  {
+    std::lock_guard<std::mutex> rg(g_ring_lock);
+    std::string ops;
+    for (int op = 0; op < 128; ++op)
+      if (g_ring_ops[op]) ops += fmt::format(" {:02X}x{}", op, g_ring_ops[op]);
+    std::memset(g_ring_ops, 0, sizeof(g_ring_ops));
+    REXLOG_INFO("[census] frame {}: ring ops between draws{}", w.frame_index, ops);
+  }
   {
     std::lock_guard<std::mutex> sg(g_shaders.lock);
     REXLOG_INFO("[census] frame {}: shaders created {} ({} unique): {} in the cache, {} missing", w.frame_index,
@@ -427,6 +484,16 @@ EAMMA_CENSUS_COUNT(sub_8830E558, kDrawUP)
 // sub_88320C20 writes a DRAW_INDX_2 itself and calls sub_8830DAA0/DBC8 -> sub_8830D5C0/D718:
 // counted as calls only (its draws would double with the leaves).
 EAMMA_CENSUS_COUNT(sub_88320C20, kInt3)
+// EN-5: the four non-D3D functions that build SET_CONSTANT packets (FINDINGS-en1-d3d-map.md §4), and
+// the int / bool constant setters (sub_88310D20 / D78 int, sub_88310C60 / CC0 bool).
+EAMMA_CENSUS_COUNT(sub_88460D40, kSetConst0)
+EAMMA_CENSUS_COUNT(sub_887DC600, kSetConst1)
+EAMMA_CENSUS_COUNT(sub_88E2D3A8, kSetConst2)
+EAMMA_CENSUS_COUNT(sub_88E2E1E8, kSetConst3)
+EAMMA_CENSUS_COUNT(sub_88310D20, kSetVsConstI)
+EAMMA_CENSUS_COUNT(sub_88310D78, kSetPsConstI)
+EAMMA_CENSUS_COUNT(sub_88310C60, kSetVsConstB)
+EAMMA_CENSUS_COUNT(sub_88310CC0, kSetPsConstB)
 
 // Draws: (dev, ...). Counted before the call (the call itself doesn't change +0x35E0).
 #define EAMMA_CENSUS_DRAW(fn, idx)                        \

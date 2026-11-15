@@ -171,6 +171,7 @@ plume::RenderPrimitiveTopology MapPrimitiveType(u32 prim) {
 
 void DispatchDraw(u32 device_guest, u32 primitive_type, const char *name,
                   const DrawArgs &args = {}) {
+  ::EammaApplyConstantLoads(device_guest);  // native/eamma_constant_loads.cpp
 #if defined(REXGLUE_ENABLE_PROFILING)
   // Per-draw pass/shader attribution, only formatted while a profiler is
   // connected (TRACY_ON_DEMAND).
@@ -1331,6 +1332,10 @@ void UfcResolveObserved(PPCContext &args, u32, u8 *) {
   const u32 dest_va = args.r6.u32, dest_point_va = args.r7.u32, level = args.r8.u32;
   const u32 face = args.r9.u32, clear_color_va = args.r10.u32;
   bd::gpu::SvrDrawLogResolve(device_guest, flags, src_rect_va, dest_va, dest_point_va);
+  if (dest_va && !(flags & bd::gpu::kResolveDepthStencil))
+    if (const auto *d = bd::mem::try_at<const bd::gpu::D3DDevice>(device_guest);
+        d && bd::gpu::SvrIsTiledSurface(d->renderTargetShadow[0]))
+      bd::gpu::g_svr_last_tiled_resolve.store(dest_va, std::memory_order_relaxed);
   const auto *src = (flags & bd::gpu::kResolveDepthStencil) ? bd::gpu::state().depth_stencil
                                                              : bd::gpu::state().render_target;
   // What ResolveSourceForFlagsLocked will copy from. No source rect means all of it.
@@ -1596,6 +1601,47 @@ SVR_HOOK_RESULT(D3DDevice_BeginVertices, SvrBeginVerticesObserved);
 SVR_HOOK_RESULT(D3DDevice_BeginIndexedVertices, UfcBeginIndexedVerticesObserved);
 #endif
 SVR_HOOK_BEFORE(D3DDevice_EndVertices, D3DDevice_EndVertices_hook);
+#if defined(D3DDevice_BeginTiling)
+// EA MMA (EN-5): BeginTiling(dev, Flags, Count, pTileRects, pClearColor, ClearZ, Stencil). The
+// draws that follow are drawn once into host targets as large as all the tiles (ufc_resources.cpp
+// SvrNoteTiledSurface), and the tile clear the game does through its internal ClearF (no hook sees
+// it) is done here on the whole target.
+void EammaRebindTargets(u32 device_guest);  // hooks/state.cpp
+u32 EammaBeginTilingObserved(u32 device_guest, u32 /*Flags*/, u32 Count, u32 pTileRects,
+                             mapped_f32 pClearColor, f64 ClearZ, u32 /*z_gpr_slot*/, u32 ClearStencil) {
+  i32 right = 0, bottom = 0;
+  if (const auto *rects = bd::mem::try_at<const bd::gpu::D3DRect>(pTileRects))
+    for (u32 i = 0; i < std::min<u32>(Count, 16); ++i) {
+      right = std::max(right, i32(rects[i].right));
+      bottom = std::max(bottom, i32(rects[i].bottom));
+    }
+  if (const auto *dev = bd::mem::try_at<const bd::gpu::D3DDevice>(device_guest); dev && right > 0 && bottom > 0) {
+    bool grew = bd::gpu::SvrNoteTiledSurface(dev->renderTargetShadow[0], u32(right), u32(bottom));
+    grew |= bd::gpu::SvrNoteTiledSurface(dev->depthStencilShadow, u32(right), u32(bottom));
+    if (grew)
+      EammaRebindTargets(device_guest);
+  }
+  static std::atomic<u32> s_logs{0};
+  if (s_logs.fetch_add(1, std::memory_order_relaxed) < 4)
+    BD_INFO("[tiling] BeginTiling count {} extent {}x{} clear color {} z {} stencil {}", Count, right,
+            bottom, pClearColor ? "set" : "none", float(ClearZ), ClearStencil);
+  u32 flags = bd::gpu::kClearZBuffer | bd::gpu::kClearStencil;
+  u32 color_argb = 0;
+  if (const be_f32 *c = pClearColor) {
+    const auto pack = [](float v) -> u32 { return static_cast<u32>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
+    color_argb = (pack(c[3]) << 24) | (pack(c[0]) << 16) | (pack(c[1]) << 8) | pack(c[2]);
+    flags |= bd::gpu::kClearTarget;
+  }
+  bd::gpu::Video::Clear(flags, color_argb, float(ClearZ), ClearStencil);
+  return 0;
+}
+SVR_HOOK_AFTER(D3DDevice_BeginTiling, EammaBeginTilingObserved);
+#endif
+#if defined(D3DDevice_DrawVerticesUP)
+// EA MMA (EN-5): DrawVerticesUP(dev, prim, count, data, stride) calls BeginVertices (observed above),
+// copies the data in and ends the draw with EndVertices inlined, so draw the pending block after it.
+SVR_HOOK_AFTER(D3DDevice_DrawVerticesUP, D3DDevice_EndVertices_hook);
+#endif
 SVR_HOOK_RESULT(D3DDevice_Resolve, UfcResolveObserved);
 #else
 REX_HOOK(D3DDevice_DrawVertices, D3DDevice_DrawVertices_hook);

@@ -21,6 +21,8 @@
 #include <fmt/format.h>
 
 #include <rex/cvar.h>
+#include <rex/system/kernel_state.h>
+#include <rex/system/xmemory.h>
 
 #include "core/logging.h"
 #include "core/memory_helpers.h"
@@ -311,6 +313,42 @@ void SvrDrawLogDraw(u32 device_guest, const char *name, u32 primitive, bool inde
           float(dev->viewport.MaxZ), i32(dev->scissorRect.left), i32(dev->scissorRect.top),
           i32(dev->scissorRect.right), i32(dev->scissorRect.bottom), ShaderHash(s.vertex_shader),
           ShaderHash(s.pixel_shader), textures);
+  // EA MMA (EN-5): for indexed draws, stream 0's first indexed vertex as guest memory holds it
+  // (read like the geometry mirror: physical address through TranslatePhysical, big-endian words),
+  // and VS float constants c0..c7, to check a transform by hand.
+  if (indexed) {
+    auto *memory = REX_KERNEL_MEMORY();
+    const auto phys = [&](u32 physical) -> const u8 * {
+      return memory ? memory->TranslatePhysical<const u8 *>(physical & 0x1FFFFFFFu) : nullptr;
+    };
+    const auto word = [](const u8 *p) { return u32(p[0]) << 24 | u32(p[1]) << 16 | u32(p[2]) << 8 | p[3]; };
+    const u32 constant = 95u;  // stream 0's vertex fetch constant
+    const DeviceFetchConstant &slot = dev->fetchConstants[constant / 3u];
+    const u32 f0 = u32(slot.dword[(constant % 3u) * 2u]), f1 = u32(slot.dword[(constant % 3u) * 2u + 1u]);
+    const u32 stride = u32(dev->streamStrideDiv4[0]) * 4u;
+    u32 first = 0;
+    if (const auto *ib = bd::mem::try_at<const D3DIndexBuffer>(u32(dev->indexBuffer)))
+      if (const u8 *ip = phys(SvrGpuAddress(u32(ib->FetchLo)))) {
+        const bool i32x = (u32(ib->resource.Common) & 0x80000000u) != 0;
+        first = i32x ? word(ip + start * 4u) : (u32(ip[start * 2u]) << 8 | ip[start * 2u + 1u]);
+        first = u32(i32(first) + base);
+      }
+    std::string v;
+    if (const u8 *vp = phys(SvrGpuAddress(f0 & 0x1FFFFFFCu)); vp && stride)
+      for (u32 k = 0; k < 6; ++k) {
+        const u32 w = word(vp + size_t(first) * stride + k * 4u);
+        float f;
+        std::memcpy(&f, &w, 4);
+        v += fmt::format(" {:08X}({:.4g})", w, f);
+      }
+    std::string c;
+    for (u32 r : {0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u, 156u, 157u, 158u, 159u})
+      c += fmt::format(" c{}={:.4g},{:.4g},{:.4g},{:.4g}", r, float(dev->vsFloatConstants[r][0]),
+                       float(dev->vsFloatConstants[r][1]), float(dev->vsFloatConstants[r][2]),
+                       float(dev->vsFloatConstants[r][3]));
+    BD_INFO("[drawlog]   vb fetch {:08X} {:08X} stride {} vertex {}:{}", f0, f1, stride, first, v);
+    BD_INFO("[drawlog]   vs{}", c);
+  }
 }
 
 void SvrDrawLogResolve(u32 device_guest, u32 flags, u32 source_rect_va, u32 dest_va,

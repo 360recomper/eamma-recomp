@@ -143,7 +143,9 @@ void ReadDeviceRenderState(VideoState &s, u32 device_guest) {
   // RB_DEPTHCONTROL. Front-face stencil in [19:8], back face (TWOSIDEDSTENCILMODE, the CCWSTENCIL*
   // setters sub_8223E360/E390/E3C8/E400) func [22:20], fail [25:23], zpass [28:26], zfail [31:29].
   const u32 depth = SvrRegister(device_guest, 0x2200);
-  Video::SetDirtyValue(dirty, ps.zEnable, (depth & 0x2u) != 0);
+  // EA MMA dev aid (EN-5): EAMMA_NO_DEPTH_TEST=1 turns the depth test off for every draw.
+  static const bool no_depth_test = std::getenv("EAMMA_NO_DEPTH_TEST") != nullptr;
+  Video::SetDirtyValue(dirty, ps.zEnable, !no_depth_test && (depth & 0x2u) != 0);
   Video::SetDirtyValue(dirty, ps.zWriteEnable, (depth & 0x4u) != 0);
   Video::SetDirtyValue(dirty, ps.zFunc, ConvertCompareFunc((depth >> 4) & 0x7u));
   Video::SetDirtyValue(dirty, ps.stencilEnable, (depth & 0x1u) != 0);

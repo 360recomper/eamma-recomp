@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include <rex/types.h>
 
 namespace bd::gpu {
@@ -63,6 +65,12 @@ u32 SvrAutoRenderScale();
 void SvrNoteDraw(bool drawn);
 // Frames presented so far, plus 1 (never 0); per-frame mirror checks compare against it.
 u64 SvrFrameIndex();
+// EA MMA predicated tiling (EN-5): the host copy of a tile-sized surface covers all tiles. True when
+// the extent grew (the old host copy is retired; rebind the targets).
+bool SvrNoteTiledSurface(u32 surface_va, u32 width, u32 height);
+bool SvrIsTiledSurface(u32 surface_va);
+// Dev aid (SVR_PRESENT_TARGET=tiled): the last texture a tiled colour surface was resolved into.
+inline std::atomic<u32> g_svr_last_tiled_resolve{0};
 
 // Shaders and vertex declarations stay the game's own D3D objects; each one the game creates is
 // given a host counterpart (shared between objects with the same microcode / elements).

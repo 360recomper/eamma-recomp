@@ -17,10 +17,19 @@ index 8c51476..05b2602 100644
                      XXH64_hash_t hash = XXH3_64bits(shaderContainer, dataSize);
                      auto shader = shaders.try_emplace(hash);
 diff --git a/XenosRecomp/shader_common.h b/XenosRecomp/shader_common.h
-index 6d8a497..434d03b 100644
+index 6d8a497..7cdb140 100644
 --- a/XenosRecomp/shader_common.h	
 +++ b/XenosRecomp/shader_common.h	
-@@ -36,7 +36,9 @@
+@@ -5,6 +5,8 @@
+ #define SPEC_CONSTANT_ALPHA_TEST        (1 << 1)
+ // SvR 2008: normals/tangents packed as D3DDECLTYPE_DHEN3N (x 10 bits, y 11, z 11, signed).
+ #define SPEC_CONSTANT_DHEN3N_NORMAL     (1 << 5)
++// EA MMA: normals/tangents packed as D3DDECLTYPE_DEC3N 0x2A2187 (three signed 10-bit lanes, x low).
++#define SPEC_CONSTANT_DEC3N_NORMAL      (1 << 6)
+ 
+ #ifdef UNLEASHED_RECOMP
+     #define SPEC_CONSTANT_BICUBIC_GI_FILTER (1 << 2)
+@@ -36,7 +38,9 @@
      X(BlendIndices,  1, 16) \
      X(Color,         2, 17) \
      X(PointSize,     0, 18) \
@@ -31,3 +40,39 @@ index 6d8a497..434d03b 100644
  // UFC 3: locations 16-19 (second bone set, COLOR2, PSIZE, BINORMAL) go past Vulkan's guaranteed 16;
  // fine on D3D12 (32 inputs), the only API UFC's native renderer builds.
  
+@@ -288,6 +292,12 @@ float4 tfetchCubeLod0(uint resourceDescriptorIndex, uint samplerDescriptorIndex,
+ // DEC3N normal decode; IA binds as R32_UINT so lane .x carries the raw bits (asuint recovers them).
+ float4 tfetchR11G11B10(float4 value)
+ {
++    if (g_SpecConstants() & SPEC_CONSTANT_DEC3N_NORMAL)
++    {
++        uint v = asuint(value.x);
++        int3 i = int3(uint3(v << 22, v << 12, v << 2)) >> 22;
++        return float4(max(float3(i) / 511.0, -1.0), 0.0);
++    }
+     if (g_SpecConstants() & SPEC_CONSTANT_DHEN3N_NORMAL)
+     {
+         uint v = asuint(value.x);
+diff --git a/XenosRecomp/shader_recompiler.cpp b/XenosRecomp/shader_recompiler.cpp
+index c72574a..d9e9f00 100644
+--- a/XenosRecomp/shader_recompiler.cpp	
++++ b/XenosRecomp/shader_recompiler.cpp	
+@@ -408,15 +408,15 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
+     switch (findResult->second.usage)
+     {
+     case DeclUsage::Normal:
+-        specConstantsMask |= SPEC_CONSTANT_R11G11B10_NORMAL | SPEC_CONSTANT_DHEN3N_NORMAL;
++        specConstantsMask |= SPEC_CONSTANT_R11G11B10_NORMAL | SPEC_CONSTANT_DHEN3N_NORMAL | SPEC_CONSTANT_DEC3N_NORMAL;
+         print("tfetchR11G11B10(swapFloats(g_SwappedNormals, ");
+         break;
+     case DeclUsage::Tangent:
+-        specConstantsMask |= SPEC_CONSTANT_R11G11B10_NORMAL | SPEC_CONSTANT_DHEN3N_NORMAL;
++        specConstantsMask |= SPEC_CONSTANT_R11G11B10_NORMAL | SPEC_CONSTANT_DHEN3N_NORMAL | SPEC_CONSTANT_DEC3N_NORMAL;
+         print("tfetchR11G11B10(swapFloats(g_SwappedTangents, ");
+         break;
+     case DeclUsage::Binormal:
+-        specConstantsMask |= SPEC_CONSTANT_R11G11B10_NORMAL | SPEC_CONSTANT_DHEN3N_NORMAL;
++        specConstantsMask |= SPEC_CONSTANT_R11G11B10_NORMAL | SPEC_CONSTANT_DHEN3N_NORMAL | SPEC_CONSTANT_DEC3N_NORMAL;
+         print("tfetchR11G11B10(swapFloats(g_SwappedBinormals, ");
+         break;
+     case DeclUsage::BlendWeight:

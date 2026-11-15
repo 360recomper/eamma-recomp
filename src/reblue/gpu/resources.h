@@ -212,6 +212,7 @@ struct GuestVertexDeclaration {
   u32 sintTexcoords = 0;
   bool hasR11G11B10Normal = false;
   bool hasDhen3nNormal = false; // SvR: DHEN3N packed normals (kSpecConstantDhen3nNormal)
+  bool hasDec3nNormal = false;  // EA MMA: DEC3N 0x2A2187 packed normals (kSpecConstantDec3nNormal)
   bool vertexStreams[16]{};
   u32 indexVertexStream = 0;
   // UFC: elements whose guest type is an integer the shader reads as a float (USHORT2/4, INT1).
