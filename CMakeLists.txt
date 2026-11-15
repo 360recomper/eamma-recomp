@@ -31,7 +31,7 @@ endif()
 
 # Diagnostics linked into the game DLL (camera imports now come from the EA MMA SDK copy) (target from generated/default/dll_targets.cmake).
 if(TARGET eamma_MMADLLzf_xex)
-    target_sources(eamma_MMADLLzf_xex PRIVATE src/eamma_swap_trace.cpp src/dev/eamma_cmdbuf_off.cpp)
+    target_sources(eamma_MMADLLzf_xex PRIVATE src/eamma_swap_trace.cpp src/dev/eamma_cmdbuf_off.cpp src/eamma_unlock.cpp)
     # EN-0 hook proof on D3DDevice_Swap; the native hooks or the census own Swap when compiled in.
     if(NOT EAMMA_NATIVE_HOOKS AND NOT EAMMA_NATIVE_CENSUS)
         target_sources(eamma_MMADLLzf_xex PRIVATE src/dev/eamma_hook_proof.cpp)

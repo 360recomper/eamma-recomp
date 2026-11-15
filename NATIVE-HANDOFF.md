@@ -81,6 +81,9 @@ step you touch. The user wants work to continue step to step without asking for 
 - **WP10 port built**: `launcher/` compiles, its tests pass; not run against the real game or a disc image.
 - **A6 is bigger than thought**: the seated crowd never draws natively (NATIVE-ISSUES.md A6 has the draw and shader).
   A8 (pause menu highlight bar) is new.
+- **Locked fighters unlocked by a hook** (`src/eamma_unlock.cpp`, `eamma_unlock_fighters`, FINDINGS-unlocks.md): run u1
+  shows the hook firing at fighter select; the user will play-test picking them. Title updates #1/#2 are code-only
+  patches and are not applied (FINDINGS-wp7-wp10.md "Decisions"). Launcher questions were decided there too.
 - Unattended tools pass `--eamma_native_error_box=false` (eamma_selftest.py). Frozen builds older than today do not
   know that cvar.
 
