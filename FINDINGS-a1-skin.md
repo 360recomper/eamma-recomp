@@ -1,5 +1,16 @@
 # A1 fighter skin washed out: findings (2026-11-15, session 2)
 
+**Fixed (n39loop): XenosRecomp ignored the Xenos loop start/step.** Loop constants are (count, start, step); the
+translator always ran `aL = 0..count-1`. The POST_SSS blur PS CE74BC1E (`i31 = (12, 1, 1)`, the only loop in the game
+with a non-zero start) takes its centre tap itself and then loops taps 1..12; translated it re-added tap 0 and dropped
+tap 12, a per-channel gain of roughly 1.1-1.6 per pass, applied twice, clipping the SSS map. The skin PS adds the map
+after `* sssMapMult` (2..2.5), so lit skin went white with orange fringes. Fix: `shader_recompiler.cpp` emits
+`for (aL = i.y, aLi = 0; aLi < i.x; aLi++, aL += i.z)` (aLi = iteration counter; same for the non-structured path).
+No-op for every other shader (all other loops start 0 step 1, or step 0 and never read aL). Found by the advisor
+(Fable) from the shader's loop constant. n39loop/060: skin shaded and tan like emulated en3d/120; n40sssmap/060: the
+SSS map is neutral grey with each mesh in its own region, so the "full width" layout lead below was a red herring
+(the earlier presented map was the over-bright, blue-shifted one).
+
 Runs: `shots/n34` (draw log at 80 s, extended skin dump), `n35` (+ texture view dims), `n36cube` (skin slot 1 black),
 `n37sss` (skin slot 2 black), `n38sssmap` (`SVR_PRESENT_TARGET=256x256`). All native, boot_taps, 1280x720.
 

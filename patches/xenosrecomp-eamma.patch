@@ -72,7 +72,7 @@ index 6d8a497..3e65c6b 100644
      {
          uint v = asuint(value.x);
 diff --git a/XenosRecomp/shader_recompiler.cpp b/XenosRecomp/shader_recompiler.cpp
-index c72574a..da6e101 100644
+index c72574a..bb0329b 100644
 --- a/XenosRecomp/shader_recompiler.cpp	
 +++ b/XenosRecomp/shader_recompiler.cpp	
 @@ -408,15 +408,15 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
@@ -94,7 +94,47 @@ index c72574a..da6e101 100644
          print("tfetchR11G11B10(swapFloats(g_SwappedBinormals, ");
          break;
      case DeclUsage::BlendWeight:
-@@ -2644,6 +2644,8 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2084,6 +2084,9 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+ 
+     out += "\tint a0 = 0;\n";
+     out += "\tint aL = 0;\n";
++    // EA MMA: Xenos loop constants are (count, start, step); aLi counts iterations so aL can start at
++    // .y and advance by .z (POST_SSS blur: i31 = (12, 1, 1), taps 1..12 after its own centre tap).
++    out += "\tint aLi = 0;\n";
+     out += "\tbool p0 = false;\n";
+     out += "\tfloat ps = 0.0;\n";
+     out += "\tfloat4 coIssue = 0.0;\n";
+@@ -2441,14 +2444,15 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+                 #ifdef UNLEASHED_RECOMP
+                     print("[unroll] ");
+                 #endif
+-                    println("for (aL = 0; aL < i{}.x; aL++)", uint32_t(cfInstr.loopStart.loopId));
++                    println("for (aL = i{0}.y, aLi = 0; aLi < i{0}.x; aLi++, aL += i{0}.z)", uint32_t(cfInstr.loopStart.loopId));
+                     indent();
+                     out += "{\n";
+                     ++indentation;
+                 }
+                 else 
+                 {
+-                    out += "\t\t\taL = 0;\n";
++                    println("\t\t\taL = i{}.y;", uint32_t(cfInstr.loopStart.loopId));
++                    out += "\t\t\taLi = 0;\n";
+                 }
+                 break;
+ 
+@@ -2461,8 +2465,9 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+                 }
+                 else
+                 {
+-                    out += "\t\t\t++aL;\n";
+-                    println("\t\t\tif (aL < i{}.x)", uint32_t(cfInstr.loopEnd.loopId));
++                    println("\t\t\taL += i{}.z;", uint32_t(cfInstr.loopEnd.loopId));
++                    out += "\t\t\t++aLi;\n";
++                    println("\t\t\tif (aLi < i{}.x)", uint32_t(cfInstr.loopEnd.loopId));
+                     out += "\t\t\t{\n";
+                     println("\t\t\t\tpc = {};", uint32_t(cfInstr.loopEnd.address));
+                     out += "\t\t\t\tcontinue;\n";
+@@ -2644,6 +2649,8 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                      {
                  #ifdef REBLUE_RECOMP
                          out += "\toPos.xy = oPos.xy * g_ScreenSpace.xy + g_ScreenSpace.zw * oPos.w;\n";

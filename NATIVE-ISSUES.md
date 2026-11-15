@@ -6,7 +6,7 @@ still differs from emulated. Details per step: `FINDINGS-en1..en5-*.md`, plan: `
 ## A. Open visual issues (native vs emulated)
 | # | Issue | Seen in | Lead |
 |---|---|---|---|
-| A1 | Fighter skin pale/ashen with orange or white blotches at some angles (one fighter fine, the other washed out) | shots/n33/120.png, n34/120.png | **Narrowed (FINDINGS-a1-skin.md): the SSS map (skin slot 2, 256x256 UV-space atlas) is the bad input** — blacking it out fixes the look. Lead: head/body seem rasterised at full width instead of a quadrant each (n38sssmap/090); needs ground truth |
+| A1 | ~~Fighter skin pale/ashen with orange or white blotches~~ **Fixed**: XenosRecomp ignored loop start/step; the SSS blur doubled its centre tap and over-brightened the SSS map (FINDINGS-a1-skin.md, n39loop/060) | shots/n33/120.png -> n39loop/060.png | Check more scenes/fighters shot for shot vs emulated (A4) |
 | A2 | Light halo around the menu fighter's silhouette | n33/015.png | Depth of field / depth-aware blur reading the resolved depth: depth resolve format (k_24_8 vs host D24/D32) or the z flip at resolve time |
 | A3 | Light shafts missing | not checked visually | The one untranslated shader (POSTFX 71c9fb2b, loop count = integer constant i16). Needs integer constants in XenosRecomp + an upload source (find how the game sets them; SetVS/PSConstI were never called) |
 | A4 | Unknown: everything not yet A/B'd shot for shot (career, create-a-fighter, other venues, replays) | - | Only boot -> menus -> one fight -> highlights tested |

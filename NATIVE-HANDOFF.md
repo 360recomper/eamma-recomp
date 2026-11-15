@@ -51,9 +51,8 @@ step you touch. The user wants work to continue step to step without asking for 
 - Present = Swap (no Present in this XDK); device 0x5F00, SvR-2010 offsets.
 
 ## Next steps (suggested order; see NATIVE-ISSUES.md section E for the advisor's reasoning)
-1. A1 skin: read FINDINGS-a1-skin.md. The SSS map (256x256 UV-space atlas, skin slot 2) is the bad input. Get ground
-   truth for its layout (head diffuse layout, or SSS-pass vertex TEXCOORD0 -> expected oPos) before changing code;
-   suspect: each mesh drawn at full width instead of its quadrant.
+1. A1 skin: fixed (XenosRecomp loop start/step, FINDINGS-a1-skin.md). Re-check A2 halo first: it may have been the
+   same over-bright SSS/bloom.
 2. Static check left: depth bias never fed (pipeline_cache.cpp zeroes depthBias). (+0x294C/+0x29C0: done, correct.)
 3. (done: capture drops oldest; depthFlip gated on VTE z-scale.)
 4. A2 halo: skip skin PS (bloom?) / skip DOF PS / check half-pixel offset; halo width tells which.
