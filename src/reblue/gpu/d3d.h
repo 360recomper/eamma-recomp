@@ -211,13 +211,13 @@ static_assert(sizeof(DeviceFetchConstant) == 24);
 // against the recovered D3DDevice / _D3DConstants types and BD's own code. Each
 // named field past the public struct cites where it came from.
 #if defined(SVR_NATIVE_RENDERER)
-// UFC 3 D3DDevice: 0x5F80 bytes (Direct3D_CreateDevice sub_82374F80 allocates 24448). The
-// constants block and register shadows match SvR 2010 (to +0x2AC0); the later fields are UFC's own
-// (src/native/ufc_d3d.h names the function whose store proves each one): vertex declaration
-// SvR + 0x80, the index buffer .. shaders block SvR + 0x48. Only the fields the native renderer
-// reads or writes are named.
+// EA Sports MMA D3DDevice (XDK 2.0.11164): 0x5F00 bytes (Direct3D_CreateDevice sub_88308A68
+// allocates 24448, aligns to 128 and memsets 24320). The constants block and register shadows match
+// UFC/SvR (to +0x2AC0); the index buffer .. shaders block is SvR 2010's; src/native/ufc_d3d.h names
+// the EA function whose store proves each field (FINDINGS-en1-d3d-map.md §3). Only the fields the
+// native renderer reads or writes are named. Not yet checked at run time (EN-3 census).
 struct SvrViewport {
-  be_f32 X, Y, Width, Height, MinZ, MaxZ;  // SetViewport sub_82377F58 stores floats
+  be_f32 X, Y, Width, Height, MinZ, MaxZ;  // internal viewport setter sub_88309718 stores floats
 };
 static_assert(sizeof(SvrViewport) == 24);
 
@@ -225,51 +225,48 @@ struct D3DDevice {
   be_u64 m_Mask[5];                     // +0x000
   u8 pad_0028[0x480 - 0x28];
   DeviceFetchConstant fetchConstants[32];  // +0x480  SetTexture: device + (sampler+48)*24
-  be_f32 vsFloatConstants[256][4];      // +0x780  draws flush 0x4000.. from device+0x780
-  be_f32 psFloatConstants[256][4];      // +0x1780 draws flush 0x4400.. from device+0x1780
-  be_u32 vsBoolConstants[4];            // +0x2780 (constants block +0x80, as above)
-  be_u32 psBoolConstants[4];            // +0x2790
+  be_f32 vsFloatConstants[256][4];      // +0x780  SetVertexShaderConstantF sub_88310AB0
+  be_f32 psFloatConstants[256][4];      // +0x1780 SetPixelShaderConstantF sub_88310B88
+  be_u32 vsBoolConstants[4];            // +0x2780 sub_88310C60
+  be_u32 psBoolConstants[4];            // +0x2790 sub_88310CC0
   u8 pad_27A0[0x2938 - 0x27A0];
-  be_u32 rbBlendControl0;               // +0x2938 register 0x2201 (SetRenderState_AlphaBlendEnable)
+  be_u32 rbBlendControl0;               // +0x2938 register 0x2201 (as UFC; not checked in EA)
   u8 pad_293C[0x2958 - 0x293C];
   be_u32 rbBlendControl1;               // +0x2958 0x2209
   be_u32 rbBlendControl2;               // +0x295C 0x220A
   be_u32 rbBlendControl3;               // +0x2960 0x220B
-  u8 pad_2964[0x2F58 - 0x2964];
-  be_u32 vertexDeclaration;             // +0x2F58 SetVertexDeclaration sub_82371BB8
-  u8 pad_2F5C[0x318C - 0x2F5C];
-  be_u32 indexBuffer;                   // +0x318C SetIndices sub_82377900
-  be_u32 renderTargetShadow[4];         // +0x3190 SetRenderTarget sub_82378088
-  be_u32 depthStencilShadow;            // +0x31A0 SetDepthStencilSurface sub_82378418
-  // SetStreamSource (sub_82377758): stwx vb,(3177+stream)*4 and the stride>>2 byte at
-  // +0x31E8+stream. The stream's fetch constant goes to fetchConstants (vertex fetch constant 95 - stream).
-  be_u32 streamSource[16];              // +0x31A4 D3DVertexBuffer per stream
-  u8 pad_31E4[0x31E8 - 0x31E4];
-  u8 streamStrideDiv4[16];              // +0x31E8 stride / 4 per stream
-  u8 pad_31F8[0x3260 - 0x31F8];         // +0x31F8 SetTexture's texture per sampler
-  SvrViewport viewport;                 // +0x3260 SetViewport
-  be_u32 viewportFlags;                 // +0x3278
-  D3DRect scissorRect;                  // +0x327C SetScissorRect sub_82377610
-  be_u32 pixelShader;                   // +0x328C SetPixelShader sub_82371798
-  be_u32 vertexShader;                  // +0x3290 SetVertexShader sub_823719A0
-  u8 pad_3294[0x5F80 - 0x3294];
+  u8 pad_2964[0x2ED8 - 0x2964];
+  be_u32 vertexDeclaration;             // +0x2ED8 SetVertexDeclaration sub_88311580
+  u8 pad_2EDC[0x3144 - 0x2EDC];
+  be_u32 indexBuffer;                   // +0x3144 SetIndices sub_8830C018
+  be_u32 renderTargetShadow[4];         // +0x3148 SetRenderTarget sub_8830C0E8
+  be_u32 depthStencilShadow;            // +0x3158 SetDepthStencilSurface sub_8830C438
+  // SetStreamSource (sub_8830BE70): stwx vb,(3159+stream)*4 and the stride>>2 byte at
+  // +0x31A0+stream. The stream's fetch constant goes to fetchConstants (vertex fetch constant 95 - stream).
+  be_u32 streamSource[16];              // +0x315C D3DVertexBuffer per stream
+  u8 pad_319C[0x31A0 - 0x319C];
+  u8 streamStrideDiv4[16];              // +0x31A0 stride / 4 per stream
+  u8 pad_31B0[0x3218 - 0x31B0];         // +0x31B0 SetTexture's texture per sampler
+  SvrViewport viewport;                 // +0x3218 SetViewport
+  be_u32 viewportFlags;                 // +0x3230
+  D3DRect scissorRect;                  // +0x3234 SetScissorRect sub_8830BC80
+  be_u32 pixelShader;                   // +0x3244 SetPixelShader sub_88310F48
+  be_u32 vertexShader;                  // +0x3248 SetVertexShader sub_88311328
+  u8 pad_324C[0x5F00 - 0x324C];
 };
-static_assert(sizeof(D3DDevice) == 0x5F80);
+static_assert(sizeof(D3DDevice) == 0x5F00);
+static_assert(offsetof(D3DDevice, vertexDeclaration) == 0x2ED8);
+static_assert(offsetof(D3DDevice, indexBuffer) == 0x3144);
+static_assert(offsetof(D3DDevice, streamSource) == 0x315C);
+static_assert(offsetof(D3DDevice, streamStrideDiv4) == 0x31A0);
+static_assert(offsetof(D3DDevice, viewport) == 0x3218);
+static_assert(offsetof(D3DDevice, scissorRect) == 0x3234);
+static_assert(offsetof(D3DDevice, vertexShader) == 0x3248);
 static_assert(offsetof(D3DDevice, fetchConstants) == 0x480);
 static_assert(offsetof(D3DDevice, vsFloatConstants) == 0x780);
 static_assert(offsetof(D3DDevice, psFloatConstants) == 0x1780);
 static_assert(offsetof(D3DDevice, vsBoolConstants) == 0x2780);
 static_assert(offsetof(D3DDevice, rbBlendControl0) == 0x2938);
-static_assert(offsetof(D3DDevice, vertexDeclaration) == 0x2F58);
-static_assert(offsetof(D3DDevice, indexBuffer) == 0x318C);
-static_assert(offsetof(D3DDevice, renderTargetShadow) == 0x3190);
-static_assert(offsetof(D3DDevice, depthStencilShadow) == 0x31A0);
-static_assert(offsetof(D3DDevice, streamSource) == 0x31A4);
-static_assert(offsetof(D3DDevice, streamStrideDiv4) == 0x31E8);
-static_assert(offsetof(D3DDevice, viewport) == 0x3260);
-static_assert(offsetof(D3DDevice, scissorRect) == 0x327C);
-static_assert(offsetof(D3DDevice, pixelShader) == 0x328C);
-static_assert(offsetof(D3DDevice, vertexShader) == 0x3290);
 #else
 struct D3DDevice {
   // m_Pending (_D3DTAGCOLLECTION): 5 dirty mask u64s. Set* setters OR into

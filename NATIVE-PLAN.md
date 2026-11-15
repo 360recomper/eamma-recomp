@@ -1,6 +1,6 @@
 # EA Sports MMA - native renderer plan
 
-Status 2026-11-15 (branch `native`): EN-0 passed, EN-2 scaffolding in, EN-1 research running. See "Progress" at the end. Source: `E:\ClaudeGame\UFC-native\docs\NATIVE-RENDERER-GUIDE.md`
+Status 2026-11-15 (branch `native`): EN-0, EN-1, EN-2 done; next is EN-3 (census). See "Progress" at the end. Source: `E:\ClaudeGame\UFC-native\docs\NATIVE-RENDERER-GUIDE.md`
 ("the guide"; chapter numbers below are its chapters). Port **UFC's tree** (`E:\ClaudeGame\UFC Recomp`, native code in
 `src/reblue/` + `src/native/`), not SvR's, as the guide says (ch. 1). Written 2026-11-14 while this tree first reached a fight on
 the emulated renderer (NOTES.md).
@@ -115,3 +115,22 @@ junction to the only copy of the disc extract - never delete or clean recursivel
   - App <-> renderer bridge (EN-5): the renderer lives in the DLL, the window/app in the exe; `g_eamma_native` and the
     cvars must be read on the DLL side. The host DLL is loaded lazily at XexLoadImage, after command-line parsing, so DLL
     cvars won't see the command line unless the exe loads the DLL early (or links its import library).
+- **EN-1 done** (`FINDINGS-en1-d3d-map.md`, `FINDINGS-en1-shaders.md`). Go/no-go: **go.**
+  - D3D: XDK 2.0.11164 (older than UFC's 20500). Device 0x5F00 with SvR 2010's offsets (IB 0x3144 .. VS 0x3248),
+    past 0x3290 UFC - 0x40. 43 names: 27 high, 10 med, 3 low; **not linked: Present, SetViewportF,
+    BeginIndexedVertices** (the game's frame end sub_88A64B70 calls Sync, Clear/Resolve, GPR, Swap itself, so the
+    native present has to hang off Swap). Linked only here: DrawVerticesUP sub_8830E558 (7 callers; needs a hook).
+    Spot-checked in the generated code: memset 24320, texture table slot+3180 (+0x31B0), recording CB +0x35A0.
+  - `src/native/ufc_d3d_names.h`, `ufc_d3d.h` and `gpu/d3d.h`'s `D3DDevice` (static_asserts) now hold EA MMA's values.
+    Hooks-on build (`-DEAMMA_NATIVE_HOOKS=ON`) compiles and links: 24 game functions overridden, all of them mapped
+    names (checked against the linker map); emulated run with them compiled in plays as before (run en1hooks).
+    `build.bat native` still builds hooks OFF; flip the default once EN-5 has the app bridge.
+  - Shaders: **all precompiled**: 157 RNAFX effects in `shader_big.ast`, 418 unique containers (178 VS, 240 PS),
+    all 0x102A11xx; CreateVS/PS get the container unchanged from FXLite (sub_88C881D0), so the cache comes from
+    the disc alone (point 3 answered: no run-time compile in normal play; `uiMovies.fx` the one name without a
+    twin). UFC's XenosRecomp: 414/418 after three small translator fixes (0x102A1121 two-shader VS, TEXCOORD7
+    location, integer loop constants) -> `patches/xenosrecomp-eamma.patch` in EN-4.
+  - Stop 1 risk looks low: one command-buffer record site and one replay site (sub_885A1FE0). EN-3 measures it.
+  - EN-3 needs: `src/dev/ufc_d3d_census.cpp` still holds UFC's raw clear-emitter hook `sub_8238D540` (EA:
+    sub_8830EDE0) and UFC offsets in its log lines; fix before building with `EAMMA_NATIVE_CENSUS=ON`. Add a
+    DrawVerticesUP counter, and count SetVS/PS-ConstantF calls (only 3+3 vtable thunks call them).

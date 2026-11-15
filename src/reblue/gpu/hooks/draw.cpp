@@ -1360,7 +1360,7 @@ void UfcResolveObserved(PPCContext &args, u32, u8 *) {
       // SetTexture ran before the host target existed and left the slot on a mirror of the
       // memory (zeros, so a black face): point every slot bound to this header at the target.
       {
-        constexpr u32 kBoundTextureTable = 0x31F8u;  // device + (3198 + slot) * 4 (ufc_d3d.h)
+        constexpr u32 kBoundTextureTable = 0x31B0u;  // device + (3180 + slot) * 4 (ufc_d3d.h kTexture, EA MMA)
         auto &vs = bd::gpu::state();
         for (u32 slot = 0; slot < bd::gpu::kTextureSlots; ++slot) {
           if (bd::mem::load<u32>(device_guest + kBoundTextureTable + slot * 4u) == dest_va &&
@@ -1591,7 +1591,10 @@ SVR_HOOK_BEFORE(D3DDevice_DrawVertices, UfcDrawVerticesObserved);
 #endif
 SVR_HOOK_BEFORE(D3DDevice_DrawIndexedVertices, UfcDrawIndexedVerticesObserved);
 SVR_HOOK_RESULT(D3DDevice_BeginVertices, SvrBeginVerticesObserved);
+// EA MMA does not link BeginIndexedVertices (ufc_d3d_names.h): hook only where the name is mapped.
+#if defined(D3DDevice_BeginIndexedVertices)
 SVR_HOOK_RESULT(D3DDevice_BeginIndexedVertices, UfcBeginIndexedVerticesObserved);
+#endif
 SVR_HOOK_BEFORE(D3DDevice_EndVertices, D3DDevice_EndVertices_hook);
 SVR_HOOK_RESULT(D3DDevice_Resolve, UfcResolveObserved);
 #else

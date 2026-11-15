@@ -25,7 +25,11 @@ rexglue_setup_target(eamma GPU_PLUGINS xenos)
 
 # Diagnostics linked into the game DLL (camera imports now come from the EA MMA SDK copy) (target from generated/default/dll_targets.cmake).
 if(TARGET eamma_MMADLLzf_xex)
-    target_sources(eamma_MMADLLzf_xex PRIVATE src/eamma_swap_trace.cpp src/dev/eamma_hook_proof.cpp)
+    target_sources(eamma_MMADLLzf_xex PRIVATE src/eamma_swap_trace.cpp)
+    # EN-0 hook proof on D3DDevice_Swap; the native hooks own Swap when they are compiled in.
+    if(NOT EAMMA_NATIVE_HOOKS)
+        target_sources(eamma_MMADLLzf_xex PRIVATE src/dev/eamma_hook_proof.cpp)
+    endif()
 endif()
 
 # Native renderer (NATIVE-PLAN.md, cmake/native_renderer.cmake): compiled into the game DLL, where
