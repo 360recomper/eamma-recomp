@@ -1336,6 +1336,11 @@ void UfcResolveObserved(PPCContext &args, u32, u8 *) {
     if (const auto *d = bd::mem::try_at<const bd::gpu::D3DDevice>(device_guest);
         d && bd::gpu::SvrIsTiledSurface(d->renderTargetShadow[0]))
       bd::gpu::g_svr_last_tiled_resolve.store(dest_va, std::memory_order_relaxed);
+  if (const u32 want = bd::gpu::g_svr_present_size.load(std::memory_order_relaxed);
+      want && dest_va && !(flags & bd::gpu::kResolveDepthStencil))
+    if (const auto *rt = bd::gpu::state().render_target;
+        rt && (u32(rt->width) << 16 | u32(rt->height)) == want)
+      bd::gpu::g_svr_last_sized_resolve.store(dest_va, std::memory_order_relaxed);
   const auto *src = (flags & bd::gpu::kResolveDepthStencil) ? bd::gpu::state().depth_stencil
                                                              : bd::gpu::state().render_target;
   // What ResolveSourceForFlagsLocked will copy from. No source rect means all of it.

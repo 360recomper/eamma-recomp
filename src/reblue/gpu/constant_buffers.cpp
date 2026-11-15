@@ -760,7 +760,9 @@ ConstantAllocation UploadSharedConstants(u32 device_guest) {
     const auto *ps = vs.pipelineState.pixelShader;
     const u64 ps_hash = (ps && ps->shaderCacheEntry) ? ps->shaderCacheEntry->hash : 0;
     const bool skin = ps_hash == 0xE3E6BFE1E3027967ull || ps_hash == 0x9AAE805CC82A2634ull ||
-                      ps_hash == 0x8F1C444E64B0346Aull || ps_hash == 0x3C773B6F2734378Full;
+                      ps_hash == 0x8F1C444E64B0346Aull || ps_hash == 0x3C773B6F2734378Full ||
+                      // EA MMA PLAYER_HEAD / PLAYER_BODY (A1)
+                      ps_hash == 0x7854AAEDF51D3BE1ull || ps_hash == 0xD0D74FF5191A4EE8ull;
     for (u32 left = black; left; left &= left - 1) {
       const u32 i = u32(std::countr_zero(left));
       BuildTextureSlot(s, s.shared, i, vs, device_p, aniso_now);
@@ -862,6 +864,14 @@ ConstantAllocation UploadSharedConstants(u32 device_guest) {
 
   s.shared.shadowPcfScale = s.shadowPcfScale;
   s.shared.depthFlip = vs.viewport.minDepth > vs.viewport.maxDepth ? 1.0f : 0.0f;
+#if defined(SVR_NATIVE_RENDERER)
+  // The console applies the viewport's depth range only with PA_CL_VTE_CNTL.VPORT_Z_SCALE_ENA
+  // (bit 4; EA's ViewportEnable setter sub_8830ABE0 stores 0x43F / 0x400 at device+0x294C). With
+  // it off z reaches the depth buffer as the shader wrote it, and the host viewport is [0,1], so
+  // an inverted guest range must not flip.
+  if (device_guest && (bd::mem::load<u32>(device_guest + 0x294C) & 0x10u) == 0)
+    s.shared.depthFlip = 0.0f;
+#endif
 
 #if defined(SVR_NATIVE_RENDERER)
   s.shared.vertexIdBase = vs.vertex_id_base;

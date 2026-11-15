@@ -30,7 +30,10 @@ step you touch. The user wants work to continue step to step without asking for 
 ## Diagnostics that work
 - `--eamma_native_draw_log_at=<s>`: one frame draw by draw (+ first vertex and VS c0..c7, c156..c159 for indexed
   draws). Summary: `python -I tools/nr_drawlog_summary.py shots/X/run.log`.
-- `SVR_PRESENT_TARGET=<va hex>` or `=tiled` (env): present a resolve target instead of the front buffer.
+- `SVR_PRESENT_TARGET=<va hex>`, `=tiled` or `=<W>x<H>` (env): present a resolve target instead of the front buffer
+  (`256x256` = the skin SSS map). Colours are as the present path shows them, not raw values.
+- `--eamma_native_skin_black_slots=<mask>`: null the given texture slots for the skin pixel shaders (bisection).
+- Run scripts need an absolute `-Script` path (the game's working directory is the build folder).
 - `EAMMA_NO_DEPTH_TEST=1` (env), `SVR_SAMPLE_STACKS=<ms>` (stack samples to native_samples.txt).
 - Census build: `--eamma_d3d_census=true` (calls/draws per frame, shader-cache key check, device constant-block
   change counts, ring packet log between draws).
@@ -48,11 +51,11 @@ step you touch. The user wants work to continue step to step without asking for 
 - Present = Swap (no Present in this XDK); device 0x5F00, SvR-2010 offsets.
 
 ## Next steps (suggested order; see NATIVE-ISSUES.md section E for the advisor's reasoning)
-1. A1 skin, cheapest first: DEC3N w = 1 instead of 0 (check the PLAYER VS HLSL for tangent.w), rebuild cache, rerun.
-   Then one fight draw log with both fighters (same PS hash for good/bad fighter = inputs, not translator); extend the
-   draw log with PS constants, bools and texture formats; diff with emulated `--trace_draw_ps=<ps hash>`.
-2. Static checks (no runs): device +0x294C / +0x29C0 register-shadow reads vs EA's setters; depth bias never fed.
-3. Small fixes: constant-capture overflow drops the newest (drop oldest / clear at Swap); gate depthFlip on VTE.
+1. A1 skin: read FINDINGS-a1-skin.md. The SSS map (256x256 UV-space atlas, skin slot 2) is the bad input. Get ground
+   truth for its layout (head diffuse layout, or SSS-pass vertex TEXCOORD0 -> expected oPos) before changing code;
+   suspect: each mesh drawn at full width instead of its quadrant.
+2. Static check left: depth bias never fed (pipeline_cache.cpp zeroes depthBias). (+0x294C/+0x29C0: done, correct.)
+3. (done: capture drops oldest; depthFlip gated on VTE z-scale.)
 4. A2 halo: skip skin PS (bloom?) / skip DOF PS / check half-pixel offset; halo width tells which.
 5. B7: A/B `--eamma_native_wb_eager_frames=-1`.
 6. Consider making the census a run-time switch inside the native build (no more 10-minute rebuilds).

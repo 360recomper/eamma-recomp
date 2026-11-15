@@ -34,6 +34,19 @@ struct ConstantLoad {
 };
 std::mutex g_mutex;
 std::vector<ConstantLoad> g_pending;
+
+// Records pile up only when no native draw consumes them (another device, a stretch without
+// draws). The newest are the ones the next draw needs, so a full list drops its oldest quarter.
+void PushLoad(const ConstantLoad &l) {
+  constexpr size_t kMax = 4096;
+  if (g_pending.size() >= kMax) {
+    static std::atomic<u32> s_logs{0};
+    if (s_logs.fetch_add(1, std::memory_order_relaxed) < 4)
+      REXLOG_WARN("native: constant capture full ({} records), dropping the oldest", kMax);
+    g_pending.erase(g_pending.begin(), g_pending.begin() + kMax / 4);
+  }
+  g_pending.push_back(l);
+}
 }  // namespace
 
 // Called by every native draw (hooks/draw.cpp DispatchDraw) before it reads the device's constants.
@@ -70,8 +83,7 @@ extern "C" REX_FUNC(D3DDevice_GpuLoadShaderConstantF4Pointer) {
       REXLOG_INFO("native: constant load {} c{} x{} from {:08X}", ctx.r4.u32 ? "PS" : "VS", ctx.r5.u32,
                   ctx.r7.u32, ctx.r6.u32);
     std::lock_guard lock(g_mutex);
-    if (g_pending.size() < 4096)
-      g_pending.push_back({ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32});
+    PushLoad({ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32});
   }
   __imp__D3DDevice_GpuLoadShaderConstantF4Pointer(ctx, base);
 }
@@ -88,8 +100,7 @@ extern "C" REX_FUNC(D3DDevice_GpuBeginShaderConstantF4) {
     if (s_logs.fetch_add(1, std::memory_order_relaxed) < 4)
       REXLOG_INFO("native: constant ring write {} c{} x{} at {:08X}", type ? "PS" : "VS", start, count, data);
     std::lock_guard lock(g_mutex);
-    if (g_pending.size() < 4096)
-      g_pending.push_back({dev, type, start, data, count});
+    PushLoad({dev, type, start, data, count});
   }
 }
 #endif

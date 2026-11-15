@@ -113,13 +113,30 @@ u32 D3DDevice_Swap_hook(u32 /*device*/, u32 front_buffer_va,
   // Dev aid: SVR_PRESENT_TARGET=<guest texture address> presents that resolve target instead of
   // the front buffer (to look at an intermediate, e.g. the depth copy post-processing samples).
   static const char *present_env = std::getenv("SVR_PRESENT_TARGET");
-  static const u32 present_override = present_env ? u32(std::strtoul(present_env, nullptr, 16)) : 0u;
+  // Only a whole hex number is an address ("256x256" would otherwise parse as 0x256).
+  static const u32 present_override = [] {
+    if (!present_env)
+      return 0u;
+    char *end = nullptr;
+    const u32 va = u32(std::strtoul(present_env, &end, 16));
+    return end && *end == '\0' ? va : 0u;
+  }();
   if (present_override)
     front_buffer_va = present_override;
   // EA MMA dev aid: SVR_PRESENT_TARGET=tiled presents the tiled 3D scene's last colour resolve.
   if (present_env && std::strcmp(present_env, "tiled") == 0)
     if (const u32 t = bd::gpu::g_svr_last_tiled_resolve.load(std::memory_order_relaxed))
       front_buffer_va = t;
+  // SVR_PRESENT_TARGET=<W>x<H>: the last resolve out of a colour target of that guest size.
+  static const u32 present_size = [] {
+    unsigned w = 0, h = 0;
+    return present_env && std::sscanf(present_env, "%ux%u", &w, &h) == 2 ? u32(w << 16 | h) : 0u;
+  }();
+  if (present_size) {
+    bd::gpu::g_svr_present_size.store(present_size, std::memory_order_relaxed);
+    if (const u32 t = bd::gpu::g_svr_last_sized_resolve.load(std::memory_order_relaxed))
+      front_buffer_va = t;
+  }
   auto *front_buffer = bd::gpu::SvrResolveTarget(front_buffer_va);
 #else
   auto *front_buffer =

@@ -6,7 +6,7 @@ still differs from emulated. Details per step: `FINDINGS-en1..en5-*.md`, plan: `
 ## A. Open visual issues (native vs emulated)
 | # | Issue | Seen in | Lead |
 |---|---|---|---|
-| A1 | Fighter skin pale/ashen with orange or white blotches at some angles (one fighter fine, the other washed out) | shots/n33/120.png, n33/015.png | Skin PS reads something wrong: a lookup/resolve texture, bool or PS constants not covered by the two constant hooks, or a co-issue/translator case. Draw log at the bad second, skip the skin PS by hash (`eamma_native_skip_vs`-style), read its HLSL |
+| A1 | Fighter skin pale/ashen with orange or white blotches at some angles (one fighter fine, the other washed out) | shots/n33/120.png, n34/120.png | **Narrowed (FINDINGS-a1-skin.md): the SSS map (skin slot 2, 256x256 UV-space atlas) is the bad input** — blacking it out fixes the look. Lead: head/body seem rasterised at full width instead of a quadrant each (n38sssmap/090); needs ground truth |
 | A2 | Light halo around the menu fighter's silhouette | n33/015.png | Depth of field / depth-aware blur reading the resolved depth: depth resolve format (k_24_8 vs host D24/D32) or the z flip at resolve time |
 | A3 | Light shafts missing | not checked visually | The one untranslated shader (POSTFX 71c9fb2b, loop count = integer constant i16). Needs integer constants in XenosRecomp + an upload source (find how the game sets them; SetVS/PSConstI were never called) |
 | A4 | Unknown: everything not yet A/B'd shot for shot (career, create-a-fighter, other venues, replays) | - | Only boot -> menus -> one fight -> highlights tested |
@@ -14,15 +14,15 @@ still differs from emulated. Details per step: `FINDINGS-en1..en5-*.md`, plan: `
 ## B. Correctness risks in what was built
 | # | Risk | Where |
 |---|---|---|
-| B1 | Constant capture applies "at the next draw" only for the same device and keeps at most 4096 records; GPU-owned constants written for a draw recorded into a command buffer would be applied to a direct draw instead. Command buffers are off natively, so not hit today | src/native/eamma_constant_loads.cpp |
+| B1 | Constant capture applies "at the next draw" only for the same device and keeps at most 4096 records (now drops the oldest quarter when full); GPU-owned constants written for a draw recorded into a command buffer would be applied to a direct draw instead. Command buffers are off natively, so not hit today | src/native/eamma_constant_loads.cpp |
 | B2 | Writing captured constants into the device's constant block assumes the game's D3D never reads/flushes those registers (GPU-owned). Holds in tests, not proven from the D3D code | same |
 | B3 | Tiled-surface extent is remembered per surface VA forever; a surface reused for something non-tiled keeps the bigger host copy (harmless so far) | ufc_resources.cpp SvrNoteTiledSurface |
 | B4 | BeginTiling clear always clears depth+stencil and clears colour when a colour pointer is given; the real Flags semantics were not decoded | hooks/draw.cpp EammaBeginTilingObserved |
-| B5 | DEC3N decode returns w = 0 like the other packed-normal paths; a shader using .w of a normal would differ | shader_common.h |
+| B5 | DEC3N decode returns w = 0 like the other packed-normal paths; a shader using .w of a normal would differ. Checked: none of the 418 shaders reads it | shader_common.h |
 | B6 | DXN/DXT5A channel fill copied from Xenia's table, not checked against the game | native_texture_mirror.cpp |
 | B7 | Eager resolve write-back (`eamma_native_wb_eager_frames`, default 8) is on but was added for a wrong diagnosis (C1); costs a GPU sync per new resolve; may hide or cause timing differences | ufc_resolve_writeback.cpp |
 | B8 | The guest-memory reads in the draw log use TranslatePhysical; earlier `bd::mem::try_load` on the 0xA... view returned 0 silently and misled a diagnosis (C3) | ufc_draw_log.cpp |
-| B9 | `src/native/ufc_d3d.h` / `gpu/d3d.h` offsets: only VS/PS/decl and the recording CB were proven at run time; front/back buffer, ring guarantee, register-shadow blocks (+0x2880..) are assumed from UFC/SvR | FINDINGS-en1-d3d-map.md section 7 |
+| B9 | `src/native/ufc_d3d.h` / `gpu/d3d.h` offsets: only VS/PS/decl and the recording CB were proven at run time; front/back buffer, ring guarantee, register-shadow blocks (+0x2880..) are assumed from UFC/SvR. +0x294C (VTE) and +0x29C0 (pixel centre) now checked against EA's setters | FINDINGS-en1-d3d-map.md section 7 |
 
 ## C. What went wrong so far (mistakes and dead ends)
 | # | What happened | Cost | Lesson |

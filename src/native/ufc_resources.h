@@ -71,6 +71,10 @@ bool SvrNoteTiledSurface(u32 surface_va, u32 width, u32 height);
 bool SvrIsTiledSurface(u32 surface_va);
 // Dev aid (SVR_PRESENT_TARGET=tiled): the last texture a tiled colour surface was resolved into.
 inline std::atomic<u32> g_svr_last_tiled_resolve{0};
+// Dev aid (SVR_PRESENT_TARGET=<W>x<H>, e.g. 256x256): the last texture a colour target of that
+// guest size was resolved into, so an intermediate can be looked at without knowing its address.
+inline std::atomic<u32> g_svr_present_size{0};  // W << 16 | H, 0 = off
+inline std::atomic<u32> g_svr_last_sized_resolve{0};
 
 // Shaders and vertex declarations stay the game's own D3D objects; each one the game creates is
 // given a host counterpart (shared between objects with the same microcode / elements).

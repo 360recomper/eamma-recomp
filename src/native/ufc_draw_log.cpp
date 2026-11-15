@@ -80,7 +80,13 @@ constexpr u32 kBoundTextureTable = 3180u * 4u;  // EA MMA +0x31B0 (ufc_d3d.h kTe
 std::string Host(const GuestTexture *t) {
   if (!t)
     return "-";
-  return fmt::format("{}x{} f{}", t->width, t->height, u32(t->format));
+  // View dimension: the shader picks the 2D, 3D or cube heap by the fetch, so a cube fetch on a
+  // 2D-view texture reads the null cube.
+  const char *view = t->viewDimension == plume::RenderTextureViewDimension::TEXTURE_CUBE ? " cube"
+                     : t->viewDimension == plume::RenderTextureViewDimension::TEXTURE_3D ? " 3d"
+                                                                                          : "";
+  return fmt::format("{}x{} f{}{}{}", t->width, t->height, u32(t->format), view,
+                     t->descriptorIndex == kInvalidDescriptorIndex ? " nodesc" : "");
 }
 
 u64 ShaderHash(const GuestShader *s) {
@@ -237,17 +243,28 @@ void SvrDrawLogDraw(u32 device_guest, const char *name, u32 primitive, bool inde
             float(dev->psFloatConstants[0][0]),
             u32(bd::mem::at<const D3DSurface>(u32(dev->renderTargetShadow[0]))->Format));
   }
-  // NR-8b-2f: fighter skin PS and ambient cube PS constants, against the emulated draw trace.
+  // A1 (EA MMA): fighter skin pixel shaders PLAYER_HEAD 7854AAED / PLAYER_BODY D0D74FF5. Every float
+  // register they read (c0..c40, c188..c197: shadow matrices, light directions) and the bool
+  // constants (BOOL_BIT 128 enableIntroLighting, 129 enable_outdoor_shadow_and_lighting), to tell
+  // the washed-out fighter's inputs from the good one's.
   if (const u64 ps_hash = ShaderHash(s.pixel_shader);
-      ps_hash == 0xE3E6BFE1E3027967ull || ps_hash == 0x410A9239BF4C778Cull) {
+      ps_hash == 0x7854AAEDF51D3BE1ull || ps_hash == 0xD0D74FF5191A4EE8ull) {
     std::string list;
-    for (const u32 c : {1u, 2u, 3u, 4u, 9u, 10u, 11u, 12u, 17u, 18u, 19u, 20u, 141u, 142u, 143u,
-                        155u, 156u, 158u, 162u, 170u, 183u, 184u, 185u, 190u, 204u, 205u, 206u,
-                        207u, 208u, 209u, 213u, 222u})
+    const auto add = [&](u32 c) {
       list += fmt::format(" c{}={:.4g},{:.4g},{:.4g},{:.4g}", c, float(dev->psFloatConstants[c][0]),
                           float(dev->psFloatConstants[c][1]), float(dev->psFloatConstants[c][2]),
                           float(dev->psFloatConstants[c][3]));
-    BD_INFO("[drawlog]   skin ps{}", list);
+    };
+    for (u32 c = 0; c <= 40; ++c)
+      add(c);
+    for (u32 c = 188; c <= 199; ++c)
+      add(c);
+    BD_INFO("[drawlog]   skin ps {:08X} bools vs {:08X} {:08X} {:08X} {:08X} ps {:08X} {:08X} {:08X} "
+            "{:08X} |{}",
+            u32(ps_hash >> 32), u32(dev->vsBoolConstants[0]), u32(dev->vsBoolConstants[1]),
+            u32(dev->vsBoolConstants[2]), u32(dev->vsBoolConstants[3]), u32(dev->psBoolConstants[0]),
+            u32(dev->psBoolConstants[1]), u32(dev->psBoolConstants[2]), u32(dev->psBoolConstants[3]),
+            list);
   }
   // NR-10g: the CAF composite's pixel shaders read c0 (g_ETCParam) and c1 (g_HSBColor, the skin
   // tone as hue/saturation/brightness); the head pass C0E01A79 outputs HSB-to-RGB(c1) + its t1
