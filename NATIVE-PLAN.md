@@ -124,7 +124,8 @@ junction to the only copy of the disc extract - never delete or clean recursivel
   - `src/native/ufc_d3d_names.h`, `ufc_d3d.h` and `gpu/d3d.h`'s `D3DDevice` (static_asserts) now hold EA MMA's values.
     Hooks-on build (`-DEAMMA_NATIVE_HOOKS=ON`) compiles and links: 24 game functions overridden, all of them mapped
     names (checked against the linker map); emulated run with them compiled in plays as before (run en1hooks).
-    `build.bat native` still builds hooks OFF; flip the default once EN-5 has the app bridge.
+    The build folder's CMake cache now has `EAMMA_NATIVE_HOOKS=ON` (hooks compiled in, gated off at run time:
+    `g_eamma_native` lives in the DLL and nothing sets it until EN-5's app bridge). The option default stays OFF.
   - Shaders: **all precompiled**: 157 RNAFX effects in `shader_big.ast`, 418 unique containers (178 VS, 240 PS),
     all 0x102A11xx; CreateVS/PS get the container unchanged from FXLite (sub_88C881D0), so the cache comes from
     the disc alone (point 3 answered: no run-time compile in normal play; `uiMovies.fx` the one name without a
