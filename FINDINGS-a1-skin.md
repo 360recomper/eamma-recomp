@@ -60,3 +60,32 @@ for this declaration.
 - depthFlip gated on PA_CL_VTE_CNTL.VPORT_Z_SCALE_ENA (bit 4): with the viewport transform off the console applies no
   depth range. Not exercised by a test that would show it (no such draw seen).
 - Constant capture: a full list (4096) drops its oldest quarter instead of the newest records (warns 4 times).
+
+## A5: menu fighter face patchwork (open, 2026-11-15 later)
+Native menu fighter (~10-15 s, `shots/n39loop/015.png` vs emulated `en3d/015.png`): hard-edged patches of different
+lighting on face/chest, black seams on the head top, a black line across the neck/collarbone. The A2 halo is gone.
+- Patchwork = SSS map content: blacking skin slot 2 removes it (n41menu). The neck line stays with slots 2 and the
+  shadow slots blanked (n44neck): separate cause, probably per-vertex/geometry (head/body seam).
+- The skin PS's SSS lookup UV is a smooth gradient over the head (head PS override showing `r0.xy`, n50uv): the lookup
+  is right; the map content is wrong.
+- SSS-pass PS instrumented (override, n48dbg: R = shadow factor `r5.z`, G = `min(ao^2, ssao)`, B = N.L): G and B are
+  clean; R shows contour rings (~0.7-0.9) and hard jagged steps on lit surfaces = self-shadow acne in the variance
+  shadow test. The shadow map (n51shadow, 512x512 k_8_8_8_8 resolve; R ~0.25 = d, G ~0.03 = d^2) is 8-bit, so the
+  variance is near precision limits; the console reads the same 8-bit texture, so the open question is what makes the
+  receiver's d differ from the caster's on host.
+- Ruled out: AO/SSAO term (G clean, SSAO buffer n47ssao plausible), blur radius (BlurKernel.x/256 < 1 texel by design),
+  half-pixel offset (`SVR_NO_HALF_PIXEL=1`, n49nohp: unchanged), sampler filters (device fetch constants: linear
+  mag/min on every slot incl. the shadow map, n52fc), loop handling.
+- Fixed on the way: **XenosRecomp dropped `setTexLOD`** (register-LOD fetches sampled the computed level). Now
+  `SetTextureLod` stores `texLod` and `useRegLod` fetches call `tfetch2D/3D/CubeLevel(..., texLod + lodBias/32)`.
+  8 shaders use it (SSS pass: normal/flex/AO at level 3). Did not remove the patchwork by itself.
+- Next: compare caster vs receiver d for one texel (log the caster VS 11F5B37D outputs for a vertex and the SSS VS
+  E91756D8 for the same vertex), check the shadow-map VSM blur pass (64x64? shader 739d6a448545923c), and the receiver
+  bias constants Shadow_Bias_Epsilon c9 = (0.012, 0.001), Shadow_Adjuster c10 = (0.96, 1, 1, 1).
+
+## Dev tools added
+- `XENOS_RECOMP_HLSL_OVERRIDE=<dir>` (env, at cache build): `<dir>/<HASH>.hlsl` replaces that shader's translation.
+  Scratch generators used: mkdebug.py (SSS PS terms), mkuvdbg.py (head PS lookup UV / SSS sample). Rebuild the normal
+  cache afterwards (`python -I tools/nr_build_shader_cache.py` without the env).
+- Draw log: SSS PS 8767A8E6 in the full register dump; device-side fetch constants (dword0/dword3) for slots 0-13.
+- `SVR_NO_HALF_PIXEL=1` (env): drop the D3D9 half-pixel offset (A/B only).

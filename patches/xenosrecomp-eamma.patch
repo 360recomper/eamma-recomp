@@ -1,5 +1,5 @@
 diff --git a/XenosRecomp/main.cpp b/XenosRecomp/main.cpp
-index 8c51476..05b2602 100644
+index 8c51476..18c076f 100644
 --- a/XenosRecomp/main.cpp	
 +++ b/XenosRecomp/main.cpp	
 @@ -174,8 +174,11 @@ int main(int argc, char** argv)
@@ -16,8 +16,29 @@ index 8c51476..05b2602 100644
                  {
                      XXH64_hash_t hash = XXH3_64bits(shaderContainer, dataSize);
                      auto shader = shaders.try_emplace(hash);
+@@ -233,6 +236,20 @@ int main(int argc, char** argv)
+                 shader.specConstantsMask = recompiler.specConstantsMask;
+                 shader.flags = recompiler.computedFetch ? 1u : 0u;
+ 
++                // EA MMA dev aid: XENOS_RECOMP_HLSL_OVERRIDE=<dir> replaces a shader's HLSL with
++                // <dir>/<HASH 16 hex>.hlsl (same hash as the dump header), to instrument one shader.
++                if (const char* overrideDir = std::getenv("XENOS_RECOMP_HLSL_OVERRIDE"))
++                {
++                    auto overridePath = std::filesystem::path(overrideDir) / fmt::format("{:016X}.hlsl", hash);
++                    if (std::filesystem::exists(overridePath))
++                    {
++                        size_t overrideSize = 0;
++                        auto overrideData = readAllBytes(overridePath.string().c_str(), overrideSize);
++                        recompiler.out.assign(reinterpret_cast<const char*>(overrideData.get()), overrideSize);
++                        fmt::println("override: {}", overridePath.string());
++                    }
++                }
++
+                 if (!hlslDumpDir.empty())
+                 {
+                     auto path = std::filesystem::path(hlslDumpDir) /
 diff --git a/XenosRecomp/shader_common.h b/XenosRecomp/shader_common.h
-index 6d8a497..3e65c6b 100644
+index 6d8a497..01fcd6b 100644
 --- a/XenosRecomp/shader_common.h	
 +++ b/XenosRecomp/shader_common.h	
 @@ -5,6 +5,8 @@
@@ -58,7 +79,28 @@ index 6d8a497..3e65c6b 100644
      float4 g_ScreenSpace : packoffset(c22); \
      int g_VertexIdBase : packoffset(c23.x); \
      uint2 g_VfetchStreamBytes : packoffset(c23.y); \
-@@ -288,6 +296,12 @@ float4 tfetchCubeLod0(uint resourceDescriptorIndex, uint samplerDescriptorIndex,
+@@ -284,10 +292,33 @@ float4 tfetchCubeLod0(uint resourceDescriptorIndex, uint samplerDescriptorIndex,
+     return g_TextureCubeDescriptorHeap[resourceDescriptorIndex].SampleLevel(g_SamplerDescriptorHeap[samplerDescriptorIndex], cubeMapData.cubeMapDirections[texCoord.z], 0);
+ }
+ 
++// EA MMA: register-LOD fetches (setTexLOD + useRegLod) sample the level the shader set.
++float4 tfetch2DLevel(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset, float lod)
++{
++    Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
++    return texture.SampleLevel(g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord + offset / getTexture2DDimensions(texture), lod);
++}
++
++float4 tfetch3DLevel(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord, float lod)
++{
++    return g_Texture3DDescriptorHeap[resourceDescriptorIndex].SampleLevel(g_SamplerDescriptorHeap[samplerDescriptorIndex], texCoord, lod);
++}
++
++float4 tfetchCubeLevel(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float3 texCoord, inout CubeMapData cubeMapData, float lod)
++{
++    return g_TextureCubeDescriptorHeap[resourceDescriptorIndex].SampleLevel(g_SamplerDescriptorHeap[samplerDescriptorIndex], cubeMapData.cubeMapDirections[texCoord.z], lod);
++}
++
+ #ifdef REBLUE_RECOMP
  // DEC3N normal decode; IA binds as R32_UINT so lane .x carries the raw bits (asuint recovers them).
  float4 tfetchR11G11B10(float4 value)
  {
@@ -72,7 +114,7 @@ index 6d8a497..3e65c6b 100644
      {
          uint v = asuint(value.x);
 diff --git a/XenosRecomp/shader_recompiler.cpp b/XenosRecomp/shader_recompiler.cpp
-index c72574a..bb0329b 100644
+index c72574a..d551a12 100644
 --- a/XenosRecomp/shader_recompiler.cpp	
 +++ b/XenosRecomp/shader_recompiler.cpp	
 @@ -408,15 +408,15 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
@@ -94,17 +136,63 @@ index c72574a..bb0329b 100644
          print("tfetchR11G11B10(swapFloats(g_SwappedBinormals, ");
          break;
      case DeclUsage::BlendWeight:
-@@ -2084,6 +2084,9 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -514,6 +514,21 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
+ 
+ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicubic)
+ {
++    // EA MMA: setTexLOD (the SSS pass samples normal/flex/AO at a fixed level 3). The level is the
++    // source register's first swizzled component; useRegLod fetches read it back as texLod.
++    if (instr.opcode == FetchOpcode::SetTextureLod)
++    {
++        if (instr.isPredicated)
++        {
++            indent();
++            println("if ({}p0)", instr.predCondition ? "" : "!");
++        }
++        indent();
++        println("{}texLod = r{}.{};", instr.isPredicated ? "\t" : "", uint32_t(instr.srcRegister),
++                SWIZZLES[instr.srcSwizzle & 0x3]);
++        return;
++    }
++
+     if (instr.opcode != FetchOpcode::TextureFetch && instr.opcode != FetchOpcode::GetTextureWeights)
+         return;
+ 
+@@ -639,6 +654,10 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
+     {
+         out += "Lod0";
+     }
++    const bool regLod = instr.opcode == FetchOpcode::TextureFetch && instr.useRegLod &&
++        instr.dimension != TextureDimension::Texture1D;
++    if (regLod)
++        out += "Level";
+ 
+ #ifdef UNLEASHED_RECOMP
+     if (bicubic)
+@@ -658,6 +677,10 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
+         break;
+     }
+ 
++    // lodBias is in 1/32 steps.
++    if (regLod)
++        print(", texLod + {}", instr.lodBias / 32.0f);
++
+     out += ").";
+ 
+     printDstSwizzle(instr.dstSwizzle, true);
+@@ -2084,6 +2107,11 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
  
      out += "\tint a0 = 0;\n";
      out += "\tint aL = 0;\n";
 +    // EA MMA: Xenos loop constants are (count, start, step); aLi counts iterations so aL can start at
 +    // .y and advance by .z (POST_SSS blur: i31 = (12, 1, 1), taps 1..12 after its own centre tap).
 +    out += "\tint aLi = 0;\n";
++    // EA MMA: setTexLOD writes the level that register-LOD fetches (useRegLod) sample.
++    out += "\tfloat texLod = 0.0;\n";
      out += "\tbool p0 = false;\n";
      out += "\tfloat ps = 0.0;\n";
      out += "\tfloat4 coIssue = 0.0;\n";
-@@ -2441,14 +2444,15 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2441,14 +2469,15 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                  #ifdef UNLEASHED_RECOMP
                      print("[unroll] ");
                  #endif
@@ -122,7 +210,7 @@ index c72574a..bb0329b 100644
                  }
                  break;
  
-@@ -2461,8 +2465,9 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2461,8 +2490,9 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                  }
                  else
                  {
@@ -134,7 +222,7 @@ index c72574a..bb0329b 100644
                      out += "\t\t\t{\n";
                      println("\t\t\t\tpc = {};", uint32_t(cfInstr.loopEnd.address));
                      out += "\t\t\t\tcontinue;\n";
-@@ -2644,6 +2649,8 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2644,6 +2674,8 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                      {
                  #ifdef REBLUE_RECOMP
                          out += "\toPos.xy = oPos.xy * g_ScreenSpace.xy + g_ScreenSpace.zw * oPos.w;\n";

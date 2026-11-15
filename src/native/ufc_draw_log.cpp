@@ -248,7 +248,8 @@ void SvrDrawLogDraw(u32 device_guest, const char *name, u32 primitive, bool inde
   // constants (BOOL_BIT 128 enableIntroLighting, 129 enable_outdoor_shadow_and_lighting), to tell
   // the washed-out fighter's inputs from the good one's.
   if (const u64 ps_hash = ShaderHash(s.pixel_shader);
-      ps_hash == 0x7854AAEDF51D3BE1ull || ps_hash == 0xD0D74FF5191A4EE8ull) {
+      ps_hash == 0x7854AAEDF51D3BE1ull || ps_hash == 0xD0D74FF5191A4EE8ull ||
+      ps_hash == 0x8767A8E6920BCF0Aull /* SSS pass PS (A5) */) {
     std::string list;
     const auto add = [&](u32 c) {
       list += fmt::format(" c{}={:.4g},{:.4g},{:.4g},{:.4g}", c, float(dev->psFloatConstants[c][0]),
@@ -259,6 +260,12 @@ void SvrDrawLogDraw(u32 device_guest, const char *name, u32 primitive, bool inde
       add(c);
     for (u32 c = 188; c <= 199; ++c)
       add(c);
+    // Device-side fetch constants (device+0x400, what the native sampler is decoded from):
+    // dword3 bits 19-20 mag, 21-22 min, 23-24 mip filter (0 point, 1 linear).
+    list += " | devfc";
+    for (u32 t = 0; t < 14; ++t)
+      list += fmt::format(" t{}={:08X}/{:08X}", t, u32(dev->fetchConstants[t].dword[0]),
+                          u32(dev->fetchConstants[t].dword[3]));
     BD_INFO("[drawlog]   skin ps {:08X} bools vs {:08X} {:08X} {:08X} {:08X} ps {:08X} {:08X} {:08X} "
             "{:08X} |{}",
             u32(ps_hash >> 32), u32(dev->vsBoolConstants[0]), u32(dev->vsBoolConstants[1]),

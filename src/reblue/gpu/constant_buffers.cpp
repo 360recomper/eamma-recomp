@@ -840,7 +840,7 @@ ConstantAllocation UploadSharedConstants(u32 device_guest) {
       s.shared.screenSpaceScaleY = -2.0f / h;
       s.shared.screenSpaceOffsetX = (centre - gx) * 2.0f / w - 1.0f;
       s.shared.screenSpaceOffsetY = 1.0f - (centre - gy) * 2.0f / h;
-    } else if (d3d9_centres) {
+    } else if (d3d9_centres && !std::getenv("SVR_NO_HALF_PIXEL")) {  // env: A5 A/B
       // Half a pixel right and down, so D3D9-centred geometry samples and covers as on Xenos.
       s.shared.halfPixelOffsetX = 1.0f / w;
       s.shared.halfPixelOffsetY = -1.0f / h;
