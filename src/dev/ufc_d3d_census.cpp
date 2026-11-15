@@ -1,4 +1,7 @@
-// NR-6 (FINDINGS-native-renderer.md "NR-6 census"): observe-only D3D call census.
+// EN-3 (NATIVE-PLAN.md), from UFC's NR-6 census: observe-only D3D call census for EA MMA.
+// EA MMA addresses: src/native/ufc_d3d_names.h and FINDINGS-en1-d3d-map.md. EA links no Present,
+// SetViewportF or BeginIndexedVertices, and none of UFC's VIZ_QUERY survey functions; it adds
+// DrawVerticesUP (which calls BeginVertices, so its draws are counted there).
 //
 // --eamma_d3d_census=true counts calls to the game's XDK D3D functions (ufc_d3d_names.h) per Swap
 // and logs a report every --eamma_d3d_census_every frames. The emulated GPU still draws; every hook
@@ -8,13 +11,13 @@
 // What it answers for the native renderer (Stop 1):
 //   - draws per frame: direct calls (Begin(Indexed)Vertices, Draw(Indexed)Vertices) outside a
 //     command-buffer recording, draws recorded into a command buffer (BeginCommandBuffer stores the
-//     buffer at device+0x35E0), and draws a RunCommandBuffer replays. Replays are counted by
+//     buffer at device+0x35A0), and draws a RunCommandBuffer replays. Replays are counted by
 //     walking the buffer's PM4 (segment list at cb+116, INDIRECT_BUFFER entries {size, address})
 //     for DRAW_INDX / DRAW_INDX_2 packets, so prerecorded buffers the game never records at run
 //     time are counted too. Clears are draws on the GPU, so they're listed beside the draws.
 //   - draws issued inside BeginZPass..EndZPass and BeginTiling..EndTiling (tile count), which the
 //     GPU runs more than once;
-//   - whether the device's +0x3290 / +0x328C / +0x2F58 hold the objects the last SetVertexShader /
+//   - whether the device's VS / PS / decl fields (EA +0x3248 / +0x3244 / +0x2ED8) hold the objects the last SetVertexShader /
 //     SetPixelShader / SetVertexDeclaration got (NR-1: med confidence), counted at every draw;
 //   - D3DQuery Issue/GetData and VIZ_QUERY use; the render-state call table (dumped once).
 // Compare "gpu-like" (direct + replayed + clears) with the emulated renderer's per-frame draw
@@ -59,22 +62,22 @@ enum Fn : int {
   kSetVertexShader, kSetPixelShader, kSetVertexDeclaration, kSetTexture, kSetStreamSource,
   kSetIndices, kSetVsConstF, kSetPsConstF, kVbUnlock, kIbUnlock, kCreateVs, kCreatePs, kCreateDecl,
   kBeginCb, kEndCb, kRunCb, kCbPaired, kBeginZPass, kEndZPass, kBeginTiling, kEndTiling,
-  kQueryIssue, kQueryGetData, kViz0, kViz1, kViz2, kViz3, kInt0, kInt1, kInt2, kClearDraw, kSwapDraw, kGprAlloc, kFnCount
+  kQueryIssue, kQueryGetData, kDrawUP, kInt3, kInt4, kInt0, kInt1, kInt2, kClearDraw, kSwapDraw, kGprAlloc, kFnCount
 };
 constexpr const char* kFnName[kFnCount] = {
     "Swap", "Present", "Resolve", "Clear", "ClearF", "SetRenderTarget", "SetDepthStencil",
     "SetViewport", "SetScissor", "BeginVertices", "BeginIndexedVertices", "DrawVertices",
     "DrawIndexedVertices", "SetVS", "SetPS", "SetDecl", "SetTexture", "SetStreamSource",
     "SetIndices", "SetVSConstF", "SetPSConstF", "VBUnlock", "IBUnlock", "CreateVS", "CreatePS",
-    "CreateDecl", "BeginCB", "EndCB", "RunCB", "CB_82372F58", "BeginZPass", "EndZPass",
-    "BeginTiling", "EndTiling", "QueryIssue", "QueryGetData", "Viz_823787A0", "Viz_82378880",
-    "Viz_82378950", "Viz_82378AF8", "Draw_82384D40", "Draw_8236B700", "Draw_8236B858", "ClearDraw_8238D540", "SwapDraw_8238AFC0",
+    "CreateDecl", "BeginCB", "EndCB", "RunCB", "CB_8831D880", "BeginZPass", "EndZPass",
+    "BeginTiling", "EndTiling", "QueryIssue", "QueryGetData", "DrawVerticesUP", "Call_88320C20",
+    "unused", "Draw_88320378", "Draw_8830D5C0", "Draw_8830D718", "ClearDraw_8830EDE0", "SwapDraw_8832A148",
     "SetShaderGPRAllocation"};
 
 // Per-report draw tallies (reset each report).
 enum Tally : int {
   kDirect,         // draw calls outside a command-buffer recording
-  kInternal,       // D3D-internal draws that skip the public draw calls (82384D40, 8236B700, 8236B858)
+  kInternal,       // D3D-internal draws that skip the public draw calls (88320378, 8830D5C0, 8830D718, 8832A148)
   kRecorded,       // draw calls while a command buffer records (run later by RunCommandBuffer)
   kReplayed,       // draw packets in the ring range RunCommandBuffer wrote (incl. its INDIRECT_BUFFERs)
   kBufferDraws,    // draw packets in the buffers themselves (segment list), once per run
@@ -85,7 +88,7 @@ enum Tally : int {
   kTilingDraws,    // direct draws between BeginTiling and EndTiling
   kTiles,          // sum of BeginTiling's tile counts
   kResolveDraws,   // draw packets in the ring range each Resolve writes (incl. its copy-mode draw)
-  kClearRects,     // clear draws: calls of sub_8238D540, the one DRAW_INDX_2 writer under ClearF
+  kClearRects,     // clear draws: calls of sub_8830EDE0, the one DRAW_INDX_2 writer under ClearF
   kGprDraws,       // draw packets in SetShaderGPRAllocation's three INDIRECT_BUFFERs (24-point flush)
   kVsMatch, kVsMismatch, kPsMatch, kPsMismatch, kDeclMatch, kDeclMismatch,
   kQueryOcclusion, kQueryOther,
@@ -138,8 +141,18 @@ inline void ScanPm4(uint8_t* base, uint32_t addr, uint32_t dwords, int depth, Pm
   ScanPm4Va(base, PhysToVirtual(addr), dwords, depth, out);
 }
 
+// Guest ranges a PM4 walk may read: virtual heaps, the two images, the physical views. A packet
+// walk that has lost sync can pick up any value as an INDIRECT_BUFFER address (EN-3 run en3c read
+// 0x8100000A and faulted).
+inline bool Readable(uint32_t va, uint32_t dwords) {
+  const uint64_t end = uint64_t(va) + 4ull * dwords;
+  auto in = [&](uint64_t lo, uint64_t hi) { return va >= lo && end <= hi; };
+  return in(0x40000000u, 0x80000000u) || in(0x82000000u, 0x82200000u) || in(0x88000000u, 0x89200000u) ||
+         in(0xA0000000u, 0x100000000ull);
+}
+
 inline void ScanPm4Va(uint8_t* base, uint32_t va, uint32_t dwords, int depth, Pm4Count& out) {
-  if (!va || dwords > 0x100000 || depth > 4) return;
+  if (!va || dwords > 0x100000 || depth > 4 || !Readable(va, dwords)) return;
   for (uint32_t i = 0; i < dwords;) {
     const uint32_t h = Load32(base, va + 4 * i);
     const uint32_t type = h >> 30;
@@ -164,7 +177,7 @@ inline void ScanPm4Va(uint8_t* base, uint32_t va, uint32_t dwords, int depth, Pm
   }
 }
 
-// RunCommandBuffer's segment list (sub_82374010 at 0x823744F0): cb+116 -> node {next, count,
+// RunCommandBuffer's segment list (EA sub_8831D9D8, same layout as UFC): cb+116 -> node {next, count,
 // entries[count] {size dwords (low 24 bits), address}}.
 inline Pm4Count ScanCommandBuffer(uint8_t* base, uint32_t cb, uint32_t* ops = nullptr) {
   Pm4Count out;
@@ -189,7 +202,7 @@ inline void ScanImageOnce(uint8_t* base) {
   static std::atomic<bool> done{false};
   if (done.exchange(true)) return;
   uint32_t hits = 0;
-  for (uint32_t a = 0x82000000u; a < 0x83400000u && hits < 24; a += 4) {
+  for (uint32_t a = 0x88000000u; a < 0x89100000u && hits < 24; a += 4) {  // MMADLLzf.xex.dll
     const uint32_t h = Load32(base, a);
     if ((h & 0xFFFFFFFEu) == 0xC0003600u && Load32(base, a + 4) == 0x00010081u) {
       REXLOG_INFO("[census] image: DRAW_INDX_2 point packet at {:08X}: {:08X} {:08X} {:08X} {:08X}", a,
@@ -197,7 +210,7 @@ inline void ScanImageOnce(uint8_t* base) {
       ++hits;
     }
   }
-  REXLOG_INFO("[census] image: {} point-list DRAW_INDX_2 packets in 0x82000000..0x83400000", hits);
+  REXLOG_INFO("[census] image: {} point-list DRAW_INDX_2 packets in 0x88000000..0x89100000", hits);
 }
 
 inline void DumpDeviceOnce(uint8_t* base, uint32_t dev) {
@@ -208,7 +221,7 @@ inline void DumpDeviceOnce(uint8_t* base, uint32_t dev) {
   uint32_t code = 0, first = 0, last = 0;
   for (uint32_t off = 0x38; off < 0x400; off += 4) {
     const uint32_t v = Load32(base, dev + off);
-    if (v >= 0x82000000u && v < 0x83400000u) {
+    if (v >= 0x88300000u && v < 0x88FCAF6Cu) {  // DLL .text
       if (!code) first = off;
       last = off;
       ++code;
@@ -219,12 +232,14 @@ inline void DumpDeviceOnce(uint8_t* base, uint32_t dev) {
   REXLOG_INFO("[census] device {:08X}: +0x28..+0x5C{}", dev, head);
   REXLOG_INFO("[census] device {:08X}: {} code pointers in +0x38..+0x3FC, first +0x{:X}, last +0x{:X}",
               dev, code, first, last);
-  REXLOG_INFO("[census] device {:08X}: VS +0x3290 {:08X}, PS +0x328C {:08X}, decl +0x2F58 {:08X}, "
-              "IB +0x318C {:08X}, RT0 +0x3190 {:08X}, DS +0x31A0 {:08X}, recording cb +0x35E0 {:08X}",
+  REXLOG_INFO("[census] device {:08X}: VS +0x3248 {:08X}, PS +0x3244 {:08X}, decl +0x2ED8 {:08X}, "
+              "IB +0x3144 {:08X}, RT0 +0x3148 {:08X}, DS +0x3158 {:08X}, recording cb +0x35A0 {:08X}, "
+              "front +0x3AC0 {:08X}, back +0x3AC4 {:08X}",
               dev, Load32(base, dev + ufc3::d3d::kVertexShader), Load32(base, dev + ufc3::d3d::kPixelShader),
               Load32(base, dev + ufc3::d3d::kVertexDeclaration), Load32(base, dev + ufc3::d3d::kIndexBuffer),
               Load32(base, dev + ufc3::d3d::kRenderTarget0), Load32(base, dev + ufc3::d3d::kDepthStencil),
-              Load32(base, dev + ufc3::d3d::kRecordingCommandBuffer));
+              Load32(base, dev + ufc3::d3d::kRecordingCommandBuffer), Load32(base, dev + ufc3::d3d::kFrontBuffer),
+              Load32(base, dev + ufc3::d3d::kBackBuffer));
 }
 
 // Every draw call: where it goes, and the device-state cross-check.
@@ -280,10 +295,10 @@ inline void OnSwap() {
               double(t[kBufferDraws]) / f, cb_share);
   REXLOG_INFO("[census] frame {}: zpass {} calls, {:.1f} draws/frame ({:.2f}% of direct); tiling {} calls, "
               "{} tiles, {:.1f} draws/frame; queries issue {} (occlusion {}, other {}) getdata {}; "
-              "viz {} {} {} {}",
+              "DrawVerticesUP {}",
               w.frame_index, calls[kBeginZPass], double(t[kZPassDraws]) / f, zpass_share, calls[kBeginTiling],
               t[kTiles], double(t[kTilingDraws]) / f, calls[kQueryIssue], t[kQueryOcclusion], t[kQueryOther],
-              calls[kQueryGetData], calls[kViz0], calls[kViz1], calls[kViz2], calls[kViz3]);
+              calls[kQueryGetData], calls[kDrawUP]);
   // Each Resolve's own copy is a draw packet too, but the emulated GPU runs it as a copy (not a draw):
   // resolve draws beyond one per resolve are the extra GPU draws.
   REXLOG_INFO("[census] frame {}: resolves {:.1f}/frame, draw packets in them {:.1f}/frame (extra over one "
@@ -291,7 +306,7 @@ inline void OnSwap() {
               w.frame_index, double(calls[kResolve]) / f, double(t[kResolveDraws]) / f,
               (double(t[kResolveDraws]) - double(calls[kResolve])) / f,
               (double(gpu_like) + double(t[kResolveDraws]) - double(calls[kResolve])) / f);
-  REXLOG_INFO("[census] frame {}: device check VS +0x3290 {}/{} match, PS +0x328C {}/{}, decl +0x2F58 {}/{}",
+  REXLOG_INFO("[census] frame {}: device check VS +0x3248 {}/{} match, PS +0x3244 {}/{}, decl +0x2ED8 {}/{}",
               w.frame_index, t[kVsMatch], t[kVsMatch] + t[kVsMismatch], t[kPsMatch], t[kPsMatch] + t[kPsMismatch],
               t[kDeclMatch], t[kDeclMatch] + t[kDeclMismatch]);
   std::string line;
@@ -318,7 +333,6 @@ namespace uc = eamma_census;
     __imp__##fn(ctx, base);                              \
   }
 
-EAMMA_CENSUS_COUNT(D3DDevice_Present, kPresent)
 EAMMA_CENSUS_COUNT(D3DDevice_SetRenderTarget, kSetRenderTarget)
 EAMMA_CENSUS_COUNT(D3DDevice_SetDepthStencilSurface, kSetDepthStencil)
 EAMMA_CENSUS_COUNT(D3DDevice_SetViewport, kSetViewport)
@@ -335,12 +349,13 @@ EAMMA_CENSUS_COUNT(D3DDevice_CreatePixelShader, kCreatePs)
 EAMMA_CENSUS_COUNT(D3DDevice_CreateVertexDeclaration, kCreateDecl)
 EAMMA_CENSUS_COUNT(D3DDevice_BeginCommandBuffer, kBeginCb)
 EAMMA_CENSUS_COUNT(D3DDevice_EndCommandBuffer, kEndCb)
-EAMMA_CENSUS_COUNT(sub_82372F58, kCbPaired)
+EAMMA_CENSUS_COUNT(sub_8831D880, kCbPaired)
 EAMMA_CENSUS_COUNT(D3DQuery_GetData, kQueryGetData)
-EAMMA_CENSUS_COUNT(sub_823787A0, kViz0)
-EAMMA_CENSUS_COUNT(sub_82378880, kViz1)
-EAMMA_CENSUS_COUNT(sub_82378950, kViz2)
-EAMMA_CENSUS_COUNT(sub_82378AF8, kViz3)
+// EA only: DrawVerticesUP sub_8830E558 calls BeginVertices, which counts the draw.
+EAMMA_CENSUS_COUNT(sub_8830E558, kDrawUP)
+// sub_88320C20 writes a DRAW_INDX_2 itself and calls sub_8830DAA0/DBC8 -> sub_8830D5C0/D718:
+// counted as calls only (its draws would double with the leaves).
+EAMMA_CENSUS_COUNT(sub_88320C20, kInt3)
 
 // Draws: (dev, ...). Counted before the call (the call itself doesn't change +0x35E0).
 #define EAMMA_CENSUS_DRAW(fn, idx)                        \
@@ -354,7 +369,6 @@ EAMMA_CENSUS_COUNT(sub_82378AF8, kViz3)
   }
 
 EAMMA_CENSUS_DRAW(D3DDevice_BeginVertices, kBeginVertices)
-EAMMA_CENSUS_DRAW(D3DDevice_BeginIndexedVertices, kBeginIndexedVertices)
 EAMMA_CENSUS_DRAW(D3DDevice_DrawVertices, kDrawVertices)
 EAMMA_CENSUS_DRAW(D3DDevice_DrawIndexedVertices, kDrawIndexedVertices)
 
@@ -369,31 +383,32 @@ EAMMA_CENSUS_DRAW(D3DDevice_DrawIndexedVertices, kDrawIndexedVertices)
     __imp__##fn(ctx, base);                              \
   }
 
-// D3D-internal draw emitters (they write DRAW_INDX_2 themselves; found by scanning the runtime for
-// draw packet headers). 82384D40(dev, prim, count) is reached from sub_82385E98 / sub_82386650;
-// 8236B700 / 8236B858 from sub_8236BBE0 / sub_8236BCE8 (callers sub_82386650 and the game's
-// sub_82793B10). All take the device in r3.
+// D3D-internal draw emitters (they write DRAW_INDX(_2) headers themselves; found by scanning EA's
+// D3D range 0x88300000-0x8832B000 for `ori` 0x2200/0x3600 headers, EN-3): 8830D5C0 / 8830D718
+// (under sub_8830DAA0/DBC8 <- sub_88320C20), 88320378 (under sub_88321178, called indirectly),
+// 8832A148 (under Swap via sub_8832AA10). sub_883088F0 is device init only. All are assumed to take
+// the device in r3, as UFC's did (unchecked).
 #define EAMMA_CENSUS_INTERNAL(fn, idx)                      REX_EXTERN(__imp__##fn);                                 extern "C" REX_FUNC(fn) {                                  if (uc::On() && !uc::Load32(base, ctx.r3.u32 + ufc3::d3d::kRecordingCommandBuffer)) {       uc::Count(uc::idx);                                      uc::Add(uc::kInternal);                                  uc::g_frame_draws.fetch_add(1, std::memory_order_relaxed);     }                                                        __imp__##fn(ctx, base);                                }
 
-EAMMA_CENSUS_INTERNAL(sub_82384D40, kInt0)
-EAMMA_CENSUS_INTERNAL(sub_8236B700, kInt1)
-EAMMA_CENSUS_INTERNAL(sub_8236B858, kInt2)
-EAMMA_CENSUS_INTERNAL(sub_8238AFC0, kSwapDraw)  // under Swap (sub_8237BD60 -> sub_8238B880)
+EAMMA_CENSUS_INTERNAL(sub_88320378, kInt0)
+EAMMA_CENSUS_INTERNAL(sub_8830D5C0, kInt1)
+EAMMA_CENSUS_INTERNAL(sub_8830D718, kInt2)
+EAMMA_CENSUS_INTERNAL(sub_8832A148, kSwapDraw)  // under Swap (sub_8831C250 -> sub_8832AA10)
 
 // The clear draw writer (predicated DRAW_INDX_2), r3 = device.
-REX_EXTERN(__imp__sub_8238D540);
-extern "C" REX_FUNC(sub_8238D540) {
+REX_EXTERN(__imp__sub_8830EDE0);
+extern "C" REX_FUNC(sub_8830EDE0) {
   if (uc::On() && !uc::Load32(base, ctx.r3.u32 + ufc3::d3d::kRecordingCommandBuffer)) {
     uc::Count(uc::kClearDraw);
     uc::Add(uc::kClearRects);
     uc::g_frame_draws.fetch_add(1, std::memory_order_relaxed);
   }
-  __imp__sub_8238D540(ctx, base);
+  __imp__sub_8830EDE0(ctx, base);
 }
 
 // SetShaderGPRAllocation(dev, flags, vs_gprs, ps_gprs) (NR-6b): writes three INDIRECT_BUFFERs from
-// device init's buffers: the base state (+0x36EC), the table entry for vs_gprs (+0x36F4 + vs*8, vs and
-// ps default to 64 when both are 0) and the pipe flush (+0x3AF4: 24 one-vertex point-list draws,
+// device init's buffers: the base state (EA +0x36AC), the table entry for vs_gprs (+0x36B4 + vs*8, vs and
+// ps default to 64 when both are 0) and the pipe flush (EA +0x3AB4: 24 one-vertex point-list draws,
 // VS B6C9863F / PS A4A965C1 on the GPU). Those points are the GPU draws no other hook sees. Scan
 // the three buffers before the call (their contents don't change).
 REX_EXTERN(__imp__D3DDevice_SetShaderGPRAllocation);
@@ -430,7 +445,7 @@ extern "C" REX_FUNC(D3DDevice_Swap) {
 }
 
 // Clear(dev, Count, pRects, Flags, Color, Z, Stencil) and ClearF: calls only. Their draws are counted
-// at sub_8238D540 (ClearF internal sub_8238E000 -> sub_8238DA60 x2 -> sub_8238D7F8 x3 -> sub_8238D540),
+// at sub_8830EDE0 (UFC: ClearF internal -> ... -> the clear emitter; EA's internal is sub_8830F868),
 // so one clear can be several GPU draws.
 REX_EXTERN(__imp__D3DDevice_Clear);
 extern "C" REX_FUNC(D3DDevice_Clear) {
@@ -444,14 +459,14 @@ extern "C" REX_FUNC(D3DDevice_Clear) {
 REX_EXTERN(__imp__D3DDevice_ClearF);
 extern "C" REX_FUNC(D3DDevice_ClearF) {
   const uint32_t lr = static_cast<uint32_t>(ctx.lr);
-  const bool from_clear = lr >= 0x8238E7B8u && lr < 0x8238E878u;
+  const bool from_clear = lr >= 0x8830FF18u && lr < 0x8830FFD8u;  // inside Clear sub_8830FF18
   if (uc::On() && !from_clear && !uc::Load32(base, ctx.r3.u32 + ufc3::d3d::kRecordingCommandBuffer)) {
     uc::Count(uc::kClearF);
   }
   __imp__D3DDevice_ClearF(ctx, base);
 }
 
-// Resolve(dev, ...): the internal resolver memcpys canned PM4 (from 0x82017420) into the ring, with
+// Resolve(dev, ...): in UFC the internal resolver memcpys canned PM4 into the ring, with
 // draws no hook sees (the GPU logs them as 1-vertex point lists). Scan the ring range the call wrote
 // (device +0x30 before / after; a KickOff mid-call resets it, then the call is skipped).
 REX_EXTERN(__imp__D3DDevice_Resolve);
@@ -553,7 +568,7 @@ extern "C" REX_FUNC(D3DDevice_EndTiling) {
   __imp__D3DDevice_EndTiling(ctx, base);
 }
 
-// D3DQuery_Issue(query, flags): NR-2 #14, are occlusion queries used? sub_82379540 reads the
+// D3DQuery_Issue(query, flags): are occlusion queries used? (UFC layout, EA sub_88317408) reads the
 // device at query+0 and the type at query+4 (9 = occlusion / ZPD, 10 = event).
 REX_EXTERN(__imp__D3DQuery_Issue);
 extern "C" REX_FUNC(D3DQuery_Issue) {

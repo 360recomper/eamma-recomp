@@ -1,6 +1,6 @@
 # EA Sports MMA - native renderer plan
 
-Status 2026-11-15 (branch `native`): EN-0, EN-1, EN-2 done; next is EN-3 (census). See "Progress" at the end. Source: `E:\ClaudeGame\UFC-native\docs\NATIVE-RENDERER-GUIDE.md`
+Status 2026-11-15 (branch `native`): EN-0 to EN-3 done; next is EN-4 (shader cache). See "Progress" at the end. Source: `E:\ClaudeGame\UFC-native\docs\NATIVE-RENDERER-GUIDE.md`
 ("the guide"; chapter numbers below are its chapters). Port **UFC's tree** (`E:\ClaudeGame\UFC Recomp`, native code in
 `src/reblue/` + `src/native/`), not SvR's, as the guide says (ch. 1). Written 2026-11-14 while this tree first reached a fight on
 the emulated renderer (NOTES.md).
@@ -113,8 +113,7 @@ junction to the only copy of the disc extract - never delete or clean recursivel
     `kCurrentRenderPassIdVa` 0x82777474 (gpu/device.cpp), `kRenderStateCacheVa` (gpu/draw.cpp), `kTextQuadBatchEA`
     (hooks/draw.cpp), render/sampler state tables (hooks/device.cpp), census image scan 0x82000000.. (src/dev).
   - App <-> renderer bridge (EN-5): the renderer lives in the DLL, the window/app in the exe; `g_eamma_native` and the
-    cvars must be read on the DLL side. The host DLL is loaded lazily at XexLoadImage, after command-line parsing, so DLL
-    cvars won't see the command line unless the exe loads the DLL early (or links its import library).
+    cvars must be read on the DLL side. Cvars defined in the DLL do take command-line values (EN-3's `--eamma_d3d_census=true` worked).
 - **EN-1 done** (`FINDINGS-en1-d3d-map.md`, `FINDINGS-en1-shaders.md`). Go/no-go: **go.**
   - D3D: XDK 2.0.11164 (older than UFC's 20500). Device 0x5F00 with SvR 2010's offsets (IB 0x3144 .. VS 0x3248),
     past 0x3290 UFC - 0x40. 43 names: 27 high, 10 med, 3 low; **not linked: Present, SetViewportF,
@@ -135,3 +134,10 @@ junction to the only copy of the disc extract - never delete or clean recursivel
   - EN-3 needs: `src/dev/ufc_d3d_census.cpp` still holds UFC's raw clear-emitter hook `sub_8238D540` (EA:
     sub_8830EDE0) and UFC offsets in its log lines; fix before building with `EAMMA_NATIVE_CENSUS=ON`. Add a
     DrawVerticesUP counter, and count SetVS/PS-ConstantF calls (only 3+3 vtable thunks call them).
+- **EN-3 done** (`FINDINGS-en3-census.md`). Command buffers carry ~15% of a fight frame's draws (Stop 1 line is 5%),
+  but the game has a direct-draw fallback: `--eamma_command_buffers=false` (`src/dev/eamma_cmdbuf_off.cpp`, makes
+  sub_885A1FE0 report "no replay" so its callers draw pass 4 directly). Off: 0 replays, picture complete, no crash,
+  emulated draw count within 3.5% of the census. **Native runs with command buffers off; Stop 1 avoided.**
+  Device VS/PS/decl offsets proven (85,192/85,192). New for EN-5: **SetVS/PSConstantF are never called**: shader
+  constants reach the GPU another way; check where before trusting the device's constant blocks.
+  Build folder is in the census configuration (hooks off, census on) after these runs.
