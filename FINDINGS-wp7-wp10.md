@@ -44,3 +44,20 @@ was only syntax-checked by it (the main session's build and checks are recorded 
 1. Release location (turns on the updater and "Report a problem"). 2. Placeholder look and names ("EA MMA Recomp").
 3. Does the game have DLC worth installing? 4. Disc region / other media ids to accept. 5. Saves beside the exe?
 6. Offer scale above 1x in Settings while B10 is being closed?
+
+## Decisions and title updates (2026-11-15, after the user's answers)
+- The user left the open launcher questions to this session. Decided: keep the placeholder look and the names for
+  now (the user was sent the Play and Settings screenshots, `shots/launcher/`); updater stays off; Setup accepts only
+  media 324DBAD4 (the recomp is built from that exact executable; the title update packages for "EA Sports MMA
+  (World)" sit in a folder named 324DBAD4, so this is the worldwide disc); saves stay in the SDK's per-user folder;
+  no DLC page (`Setup.DlcUi` false).
+- DLC: the "Unlockable Promos" packages are entitlement keys only; the fighters' data is on the disc (user's note:
+  Big John McCarthy, Classic Frank Shamrock, Herschel Walker need the key; Classic Randy Couture needed Xbox Live demo
+  invites; Classic Bas Rutten, Ken Shamrock and Andrei Arlovski unlock by play). Plan: a game-side unlock switch
+  instead of installing packages (research in FINDINGS-unlocks.md when done).
+- Title updates #1 and #2 (user's files, `EA Sports MMA (World) (v1|v2).zip`): each is one LIVE package (type
+  000B0000, title 454108FC, media 324DBAD4) holding only executable patches: `default.xexp`, `MMAv1zf.xexp`,
+  `MMAv1szf.xexp` (4 KB each) and `MMADLLzf.xex.dllp` (1.2 MB in #1, 1.8 MB in #2). No data files. **Not applied,
+  and not recommended**: a patched DLL moves code, so the recompilation and every hooked address of the native
+  renderer (D3D map, constants, Swap, pacing hook) would have to be redone and re-proven. The user also reports that
+  #2 removed create-a-fighter name audio for UFC fighters. What #1 fixes is not known (the patch was not decoded).

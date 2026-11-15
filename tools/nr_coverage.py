@@ -5,7 +5,7 @@ usage: python -I tools/nr_coverage.py <test.log | run dir> [...] [--inventory co
 
 - Reports "N of M pixel shaders drawn" (M from the inventory, else 240 = FINDINGS-en1-shaders.md), the pixel
   shaders never drawn, every target size/format, resolve signature, and the alpha-to-mask / polygon-offset pairs.
-- --make-inventory: <hlsl dir> is XenosRecomp's HLSL output (<HASH>.hlsl, NATIVE-HANDOFF.md "Diagnostics");
+- --make-inventory: <hlsl dir> is XenosRecomp's HLSL output (one file per shader, hash in its first line; NATIVE-HANDOFF.md "Diagnostics");
   writes one "PS <hash>" / "VS <hash>" line per shader.
 """
 import os
@@ -20,12 +20,15 @@ PS_TOTAL = 240
 def make_inventory(hlsl_dir, out):
     rows = []
     for name in sorted(os.listdir(hlsl_dir)):
-        stem, ext = os.path.splitext(name)
-        if ext.lower() != '.hlsl' or not re.fullmatch(r'[0-9A-Fa-f]{16}', stem):
+        if not name.lower().endswith('.hlsl'):
             continue
         with open(os.path.join(hlsl_dir, name), encoding='utf-8', errors='replace') as f:
-            text = f.read()
-        rows.append(('PS' if 'SV_Target' in text else 'VS') + ' ' + stem.upper())
+            first = f.readline()
+        # XenosRecomp's first line: "// vertex shader  hash=0x19010A0F83BB7DB4  specConstants=0x0"
+        m = re.match(r'// (vertex|pixel) shader\s+hash=0x([0-9A-Fa-f]{16})', first)
+        if m:
+            rows.append(('PS ' if m.group(1) == 'pixel' else 'VS ') + m.group(2).upper())
+    rows = sorted(set(rows))
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, 'w', newline='\n') as f:
         f.write('\n'.join(rows) + '\n')
