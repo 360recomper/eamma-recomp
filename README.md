@@ -9,14 +9,14 @@ Do not delete or clean through it recursively: it is the only copy.
 ## Build and run
 1. `build.bat` runs codegen for both guest modules (`default.xex` launcher, `MMADLLzf.xex.dll` game)
    into `generated\`, then configures and builds `eamma.exe` + `eamma_MMADLLzf_xex.dll` with the
-   UFC3 SDK build (`E:\ClaudeGame\UFC-rexglue-sdk-nightly`).
-2. `play.bat` starts it (Vulkan; log in `play.log`). Keyboard: add `--mnk_mode=true`.
+   EA MMA SDK copy (`E:\ClaudeGame\EAMMA-rexglue-sdk`: UFC3 nightly + FNC Reborn's fixes).
+2. `play.bat` starts it (D3D12; log in `play.log`). Keyboard: add `--mnk_mode=true`.
 
 ## Files
 - `eamma_manifest.toml`: entrypoint + `[[modules]]` for the game DLL.
 - `config\functions_default.toml`, `config\functions_dll.toml`: seeded function entry points (all listed in `NOTES.md`).
 - `src\eamma_app.h`: assets path, Xenos GPU plugin, the DLL's device-path alias for the recompiled module.
-- `src\eamma_usbcam.cpp`: Xbox Live Vision camera stubs the SDK lacks (linked into the game DLL).
+- `src\eamma_swap_trace.cpp`: VdSwap trace (front buffer address, format, brightness every 600 swaps).
 - `tools\codegen_seed_loop.sh`: codegen until no "target not in any function" errors are left.
 - `tools\seed_loop.ps1`: boot loop that seeds "unregistered function" addresses at run time.
 - `tools\find_indirect_targets.py`, `tools\xex_image.py`: static indirect-target scan, XEX image loader.

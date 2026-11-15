@@ -17,7 +17,7 @@ Never run anything recursive (delete, clean) on `assets\`: it is the only copy o
 
 ## Setup
 Bootstrapped 2026-11-14 from the UFC3 recomp's first commit (`E:\ClaudeGame\UFC Recomp` 80c4b3e):
-same SDK build (`E:\ClaudeGame\UFC-rexglue-sdk-nightly`, used read-only), `env.bat`, presets,
+first UFC's SDK build, since 2026-11-15 its own SDK copy (run log), `env.bat`, presets,
 `build.bat` with -O2 pinned (UFC trap 1), `play.bat`, `tools\gamectl.ps1`, `tools\xex_image.py`,
 `tools\find_indirect_targets.py`, `tools\seed_loop.ps1`. App: `src\eamma_app.h` (assets path, Xenos
 GPU plugin load). UFC's `gpu_allow_invalid_fetch_constants` (a Yuke's engine fix) is NOT set.
@@ -50,7 +50,21 @@ GPU plugin load). UFC's `gpu_allow_invalid_fetch_constants` (a Yuke's engine fix
     vertices themselves) must be zero. vpkd3d128 (D3DCOLOR pack, 7 sites) reads correct against Xenia's lane order.
   - Next: dump the vertex buffer of the traced draw in the same frame (the dump at swap 1500 was a different frame and the
     region held other data), find which game code writes those vertices, and check the VMX128 ops it uses.
-- Not reached yet: menus, a fight.
+- **2026-11-15: FIXED, fights render.** Cause: the SDK. EA's engine needs the fixes FNC Reborn (Fight Night Champion
+  recomp, same EA engine family; github.com/whompay/FNCReborn, Apache-2.0) made in `patches/rexglue-sdk.patch`. The
+  likely key one is fused `vmaddfp`/`vnmsubfp` (single rounding, as on the console). Also in: vexptefp range, nested
+  command buffers, EDRAM range clamp, `smart` readback, 64-bit kernel args, sign-in notifications to all listeners,
+  sysheap pool, waits without spinning, XUsbcam exports (so `src/eamma_usbcam.cpp` was removed).
+  - EA MMA builds against its own SDK copy `E:\ClaudeGame\EAMMA-rexglue-sdk` (branch `eamma` = the UFC3 nightly at
+    41a568a + FNC's patch, 3-way merged: kept upstream's vpkuhus/vpkuwus fix and this tree's input system; readback
+    keeps `ondemand` and adds `smart`). Build it with its `build-eamma-sdk.bat`. UFC's SDK folder is untouched.
+  - App defaults follow FNCReborn.toml (`src/eamma_app.h` eamma_defaults; the command line wins): d3d12,
+    render_target_path_d3d12=rtv, use_fuzzy_alpha_epsilon, gamma_render_target_as_unorm16, readback_resolve=smart
+    + smart_skip_steady, primitive_processor_cache_min_indices=1000000, gpu_allow_invalid_fetch_constants.
+  - Runs fnc1 / fnc3 (scripted START/A taps): EA logo -> menus -> a fight (Emelianenko vs Couture: HUD, crowd, cage)
+    -> round highlights, steady 60 fps (`perf_second_summary`). Shots: shots/fnc1/090.png, shots/fnc3/105.png.
+  - Open: one access violation (null read +0x148 in a host DLL, ~15 s, during a profile save) in run fnc2; not
+    reproduced in 5 later runs. Minidump kept in shots/fnc2. Menus not driven deliberately yet (taps only).
 
 ## Seeded functions
 Every entry in `config\functions_default.toml` (launcher) and `config\functions_dll.toml` (game).

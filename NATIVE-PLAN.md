@@ -56,9 +56,8 @@ Pass: a log line per frame from the hook, emulated picture unchanged. Fail = no-
 **EN-2 Scaffolding (ch. 5).** Copy `src/reblue/` unchanged, `src/native/` (rename `ufc_` -> `eamma_` only where game-specific),
 `cmake/native_renderer.cmake`, `cmake/xenosrecomp.cmake`, `tools/native/`, `third_party/reblue_thirdparty/`, `patches/`,
 `tools/nr_fetch_third_party.py`. CMake options `EAMMA_NATIVE_RENDERER` / `EAMMA_NATIVE_HOOKS` **on the DLL target** (point 1);
-`build.bat native|nonative`; `-O2 -DNDEBUG` stays pinned (already in `build.bat`; trap 1). SDK null backend: this tree uses UFC's SDK build
-(`UFC-rexglue-sdk-nightly`), which already carries `0036-null-gpu-backend.patch`, so no SDK copy is needed unless EA MMA needs an SDK fix
-UFC must not get. `eamma_renderer` cvar + `LatchRenderer` + exit 3 in `src/eamma_app.h`.
+`build.bat native|nonative`; `-O2 -DNDEBUG` stays pinned (already in `build.bat`; trap 1). SDK null backend: this tree's SDK copy (`EAMMA-rexglue-sdk`, branch `eamma`) is the UFC nightly plus
+FNC Reborn's fixes, so it already carries `0036-null-gpu-backend.patch`. `eamma_renderer` cvar + `LatchRenderer` + exit 3 in `src/eamma_app.h`.
 Pass: emulated regression run reaches a fight exactly as before; native says "not implemented"; `-O2` in `build.ninja`.
 
 **EN-3 Census, Stop 1 (ch. 6).** Port `src/dev/ufc_d3d_census.cpp`; A/B draw counts against the emulated `trace_draw_ps`
