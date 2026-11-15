@@ -28,6 +28,12 @@ step you touch. The user wants work to continue step to step without asking for 
   highlights. Respects Rumble Roses GPU priority.
 - Emulated reference runs: `shots/en3a` (command buffers on), `shots/en3d` (off). Native good run: `shots/n33`.
 
+- Laptop farm (WPF, 2026-11-15): `py -I tools/eamma_selftest.py <run> --script <script> [--renderer native|emulated]
+  [--set k=v]` = UFC-style self-test (runs in E:\ClaudeGame\EAMMA-tests\selftest\<run>, sheet.jpg). `py -I tools/eamma_farm_job.py
+  <tag> [--queue]` freezes the build to TestFarmuilds\eamma-<tag> and writes a native + emulated job pair (default
+  jobs\hold\eamma-staged). Laptop setup: E:\ClaudeGame\TestFarm\EAMMA-JOBS.md. Results land in TestFarmesults\<run>.
+  Laptop = 1x only; scaled and perf runs stay on Chi.
+
 ## Diagnostics that work
 - `--eamma_native_draw_log_at=<s>`: one frame draw by draw (+ first vertex and VS c0..c7, c156..c159 for indexed
   draws). Summary: `python -I tools/nr_drawlog_summary.py shots/X/run.log`.
