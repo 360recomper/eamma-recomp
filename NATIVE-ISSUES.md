@@ -46,3 +46,28 @@ still differs from emulated. Details per step: `FINDINGS-en1..en5-*.md`, plan: `
 - Rumble Roses GPU priority: `tools/run_shots.ps1` refuses to start while it holds the GPU.
 - Agent research (EN-1 D3D map, shader inventory) was accurate where spot-checked; both agents could not write files
   (harness rule), so their reports were saved by hand.
+
+## E. Advisor review (Fable, 2026-11-15, read-only) — leads, not verified
+- **New top A1 suspect: DEC3N w.** 0x2A2187's "2A" swizzle is the one FLOAT3 (0x2A23B9) uses, where w reads as 1; our
+  decode returns w = 0. If the fighter VS uses tangent.w for handedness, the binormal collapses. Test: grep the PLAYER VS
+  HLSL for the tangent's `.w`, return 1.0 in the DEC3N branch, rebuild the cache (4 s), rerun. Also: the DEC3N decode is
+  only wired for Normal/Tangent/Binormal usages.
+- **B9 ranks higher:** `constant_buffers.cpp` ~831/834 reads raw device +0x294C (VTE) and +0x29C0 (pixel centre) every
+  draw, comments still cite SvR functions. Verify statically from EA's setters (no runs needed).
+- **Missing: guest depth bias is never fed** (`pipeline_cache.cpp` zeroes depthBias). Missing (speculative): MSAA on
+  the tiled surfaces (1280x256 tiles, depth resolves with flags 0x14).
+- **B1/B2:** design confirmed against sub_883198E0 / sub_88319858. Real defect: at 4096 records the newest are dropped;
+  drop the oldest or clear at Swap. B2 speculative: inlined XDK SetConstantF writes (block + dirty bits, invisible to
+  the call census) could collide with a capture on the same register before one draw.
+- **Reversed-Z flip judged exact** (stored depth = console's; resolves, shadow compares, depth reads unaffected). Holes:
+  gate `depthFlip` on VTE (a viewport-transform-off draw with an inverted device viewport gets flipped wrongly); depth
+  bias above.
+- B3 leave; B4 nearly right (only a "skip first tile clear" flag could differ; colour clear packed to 8-bit); B6 fine;
+  B7 cheap after 8 frames, A/B once; `s_steady` map never pruned. B8 is a fixed mistake (belongs in C).
+- **A1 other hypotheses:** PS inputs (log PS c0..c7, c156..c187, bools, per-slot texture format/resolve flag, diff with
+  `--trace_draw_ps`); a per-fighter resolved texture (ambient-cube class) or co-issue. Separator: one draw log with both
+  fighters — same PS hash for the good and bad fighter means inputs, not the translator.
+- **A2:** (1) same cause as A1 feeding bloom — skip the skin PS; (2) DOF / depth resolve — skip DOF PS, present depth;
+  (3) half-pixel offset from the raw +0x29C0 read. A 1-pixel halo = offset, wide = blur mask.
+- **Process:** make the census a run-time switch in the native build (kills the 10-minute rebuilds); read the suspect
+  shader's HLSL before any run; compare the same scene and second on both renderers.

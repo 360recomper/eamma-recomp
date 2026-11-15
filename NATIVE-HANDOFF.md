@@ -47,9 +47,13 @@ step you touch. The user wants work to continue step to step without asking for 
 - Command buffers carry ~15% of fight draws; natively they are turned off (game's own fallback path).
 - Present = Swap (no Present in this XDK); device 0x5F00, SvR-2010 offsets.
 
-## Next steps (suggested order)
-1. A1 skin shading: draw log in the fight, find the skin PS (PLAYER_* effects), compare its constants/textures with
-   emulated (`--trace_draw_ps=<ps hash>` on the census build dumps the emulated constants per draw).
-2. A2 menu halo: check the depth resolve path (flags 0x14 resolves of the tiled depth) and the DOF shader's input.
-3. B7: A/B `--eamma_native_wb_eager_frames=-1`; drop it if nothing changes.
-4. A3 light shafts (integer constants), then speed, scaling, the rest of the guide's Week 2.
+## Next steps (suggested order; see NATIVE-ISSUES.md section E for the advisor's reasoning)
+1. A1 skin, cheapest first: DEC3N w = 1 instead of 0 (check the PLAYER VS HLSL for tangent.w), rebuild cache, rerun.
+   Then one fight draw log with both fighters (same PS hash for good/bad fighter = inputs, not translator); extend the
+   draw log with PS constants, bools and texture formats; diff with emulated `--trace_draw_ps=<ps hash>`.
+2. Static checks (no runs): device +0x294C / +0x29C0 register-shadow reads vs EA's setters; depth bias never fed.
+3. Small fixes: constant-capture overflow drops the newest (drop oldest / clear at Swap); gate depthFlip on VTE.
+4. A2 halo: skip skin PS (bloom?) / skip DOF PS / check half-pixel offset; halo width tells which.
+5. B7: A/B `--eamma_native_wb_eager_frames=-1`.
+6. Consider making the census a run-time switch inside the native build (no more 10-minute rebuilds).
+7. A3 light shafts (integer constants), then speed, scaling, the guide's Week 2.
