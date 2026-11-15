@@ -51,8 +51,9 @@ step you touch. The user wants work to continue step to step without asking for 
 - Present = Swap (no Present in this XDK); device 0x5F00, SvR-2010 offsets.
 
 ## Next steps (suggested order; see NATIVE-ISSUES.md section E for the advisor's reasoning)
-1. A1 skin: fixed (XenosRecomp loop start/step, FINDINGS-a1-skin.md). Re-check A2 halo first: it may have been the
-   same over-bright SSS/bloom.
+1. Done today: A1 (loop start/step), A2 (gone with A1), A5 (stale geometry: every-draw compare is the default),
+   A3 translated (run-time loop constants), setTexLOD, B7 off. Next: see light shafts on screen (find a scene that
+   draws PS 1CCBA38A), A4 broader A/B (career, create-a-fighter, other venues), MSAA (the main scene is 4x on console).
 2. Depth bias: never fed (pipeline/pipeline_cache.cpp:105), but no logged draw enables polygon offset (PA_SU_SC_MODE_CNTL
    is only 0x18000 / 0x18002 in every draw log so far). Feed it when a scene shows bits 11/12.
 3. (done: capture drops oldest; depthFlip gated on VTE z-scale.)

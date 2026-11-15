@@ -47,9 +47,11 @@
 #include "ufc_hook.h"
 #include "ufc_resources.h"
 
-REXCVAR_DEFINE_BOOL(eamma_native_geometry_every_draw, false, "eamma",
-                    "Native renderer dev aid: compare vertex and index buffers with guest memory at "
-                    "every draw, for buffers the CPU rewrites between draws without an Unlock");
+REXCVAR_DEFINE_BOOL(eamma_native_geometry_every_draw, true, "eamma",
+                    "Native renderer: compare vertex and index buffers with guest memory at every "
+                    "draw. EA MMA rewrites the fighters' skinned buffers between draws of a frame "
+                    "without an Unlock (A5: lighting patches, cracks); ~1 ms a frame on a fast CPU. "
+                    "false = once a frame, plus every use for buffers changed in the last 60 frames");
 REXCVAR_DEFINE_BOOL(eamma_native_check_geometry, false, "eamma",
                     "Native renderer dev aid (NR-P4): hash each buffer the trusted path would not "
                     "look at, and log what it would have missed; also logs every buffer that "
@@ -76,6 +78,8 @@ constexpr u32 kDynamicAfterChanges = 2;
 constexpr u32 kMaxRingBytes = 4u << 20;
 // Copies no draw has used for this long are released (their guest memory is likely freed).
 constexpr u64 kEvictAfterFrames = 600;
+// A buffer whose content changed this recently is compared at every use, not once a frame (A5).
+constexpr u64 kVolatileFrames = 60;
 
 struct Mirror {
   u32 endian = 0;  // xenos::Endian the GPU applies reading this range
@@ -87,6 +91,7 @@ struct Mirror {
   u32 stable = 0;         // full checks in a row that found the content unchanged
   u64 checked_frame = 0;  // frame the copy was last compared in; 0 = compare at the next use
   u64 used_frame = 0;
+  u64 changed_frame = 0;  // frame a comparison last found new content (or the first content)
   std::unique_ptr<plume::RenderBuffer> buffer;  // static content
   plume::RenderBufferReference ring{};          // dynamic content, bindable while ring_epoch is current
   u64 ring_epoch = 0;
@@ -271,7 +276,12 @@ bool ResolveLocked(u32 address, u32 size, u32 endian, bool index, u64 frame,
   const bool same_kind = m.has_content && m.endian == endian && m.index == index;
   const bool ring_current = m.ring.ref && m.ring_epoch == UploadEpoch();
   bool rewritten = false;  // check only: new content with this frame's check already done
-  if (same_kind && m.checked_frame == frame && !every_draw) {
+  // EA MMA (A5): the game rewrites some vertex buffers between draws of one frame without an Unlock
+  // (the fighters' 334 KB / 145 KB / 39 KB skinned buffers: shadow, SSS and main passes saw different
+  // vertices -> lighting patches and cracks). A buffer whose last comparison found new content
+  // within the last kVolatileFrames frames is compared again at every use (the rewrite can come after
+  // the frame's first use compared equal); geometry that settled keeps the once-a-frame shortcut.
+  if (same_kind && m.checked_frame == frame && !every_draw && frame > m.changed_frame + kVolatileFrames) {
     rewritten = check && XXH3_64bits(src, size) != m.hash;
     if (rewritten)
       ReportGeometryChange(GeomChange::kMidFrame, address, size, index, m, frame, false);
@@ -353,6 +363,8 @@ bool ResolveLocked(u32 address, u32 size, u32 endian, bool index, u64 frame,
            (!same_kind || hash != m.hash || (have_sample && sample != m.sample)))
     m.sample = have_sample ? sample : SampleHash(src, size);
   m.stable = (same_kind && hash == m.hash) ? m.stable + 1 : 0;
+  if (!(same_kind && hash == m.hash))
+    m.changed_frame = frame;
   if (same_kind && hash == m.hash) {
     m.checked_frame = frame;
     if (m.buffer) {

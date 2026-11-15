@@ -9,7 +9,7 @@ still differs from emulated. Details per step: `FINDINGS-en1..en5-*.md`, plan: `
 | A1 | ~~Fighter skin pale/ashen with orange or white blotches~~ **Fixed**: XenosRecomp ignored loop start/step; the SSS blur doubled its centre tap and over-brightened the SSS map (FINDINGS-a1-skin.md, n39loop/060) | shots/n33/120.png -> n39loop/060.png | Check more scenes/fighters shot for shot vs emulated (A4) |
 | A2 | Light halo around the menu fighter's silhouette | n33/015.png | Depth of field / depth-aware blur reading the resolved depth: depth resolve format (k_24_8 vs host D24/D32) or the z flip at resolve time |
 | A3 | Light shafts: shader now translated (run-time loop constants, 418/418); not yet seen on screen | - | Find a scene that draws PS 1CCBA38A and compare with emulated |
-| A5 | Menu fighter face patchwork + black neck/collarbone line | shots/n46lod/010 vs e54menu/012 | Patchwork = variance branch of the SSS-pass shadow test (hard test alone matches emulated); caster moments noisier than on console, cause open. Neck line separate (FINDINGS-a1-skin.md) |
+| A5 | ~~Menu/fight fighter lighting patches, black cracks~~ **Fixed**: the game rewrites skinned vertex buffers mid-frame without an Unlock; geometry is now compared at every draw (FINDINGS-a1-skin.md, n73default) | n46lod/010 -> n69geomfix/010 | - |
 | A4 | Unknown: everything not yet A/B'd shot for shot (career, create-a-fighter, other venues, replays) | - | Only boot -> menus -> one fight -> highlights tested |
 
 ## B. Correctness risks in what was built
@@ -38,6 +38,7 @@ still differs from emulated. Details per step: `FINDINGS-en1..en5-*.md`, plan: `
 | C8 | Python here-doc edits broke on backslashes and CRLF several times (build.bat, shader_common.h joined line, `\/` path) | small, but one silent bug (path separator) | Use the Edit tool for lines with backslashes; check `file` for CRLF after edits |
 | C9 | Ring histogram in the census loses PM4 sync (garbage opcodes); kept as a lead only | - | Don't read counts from it |
 | C10 | Ran tests at 1280x720 window only; resolution scale, 4K, FSR, speed never exercised | - | Week 2 work |
+| C11 | A5: three advisor rounds and ~20 runs on shader math (VSM, LOD, handedness, half-pixel) before testing the geometry mirror; the shader symptoms were all downstream of stale vertex data | a long afternoon | When passes of the same mesh disagree, run with `eamma_native_geometry_every_draw` / `check_geometry` first |
 
 ## D. Process/environment notes
 - Every native A/B run is ~2-4 min (build ~1-10 min when the DLL target's defines change: switching native <-> census

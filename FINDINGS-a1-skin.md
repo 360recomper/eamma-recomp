@@ -112,3 +112,17 @@ filled from device +0x27A0: VS i0-15 then PS i0-15, one dword `count | start << 
 sub_88310D20 / sub_88310D78 store at (2536+i)*4 / (2552+i)*4). POSTFX 71c9fb2b (i16 = PS i0) compiles: 418/418, and
 the run no longer logs "shader miss 1CCBA38AC6B29550". The shafts were not seen on screen yet (no logged frame drew
 that shader); fight/menus unchanged, no hang.
+
+## A5 FIXED: stale geometry (runs n65-n73)
+The real cause was not shader math: **the game rewrites the fighters' skinned vertex buffers between draws of one
+frame without an Unlock**, and the native geometry mirror compared each buffer once a frame. Shadow caster, SSS and
+main passes then drew different vertex sets, so the SSS map's shadow term and the main pass disagreed (lighting
+patches along UV islands), and triangles mixing old/new vertices opened cracks (the black neck/chest/head lines).
+- `--eamma_native_geometry_every_draw=true` alone fixes the menu face and all black lines (n66); distrusting stable
+  buffers alone does not (n67). Check mode (n68) reports mid-frame rewrites of 334 KB / 145 KB / 39 KB vbs.
+- A "changed in the last 60 frames -> compare at every use" rule fixed the menu (n69) but a fight still showed black
+  blotches once (n70 060), so **every-draw comparison is now the default** (`eamma_native_geometry_every_draw` true;
+  ~1 ms/frame of hashing on a 4090 box, 30 fps held, n72perfA/B). The 60-frame rule stays for when it is turned off.
+- n73default: 16 frames across intro, fight, pause, KO, highlights clean.
+- Everything the A5 shader experiments "found" (variance branch, acne) was downstream of the mismatched geometry.
+  Lesson (also for C-list): when two passes of the same mesh disagree, verify the vertex data first.
