@@ -43,6 +43,7 @@ S = static (no game runs), R = needs game runs. Packages that touch `src/reblue/
 `src/native/ufc_resources.cpp` or `src/reblue/gpu/resolve.cpp` run one at a time.
 
 ```
+WPF laptop test farm (first: makes every later R package queueable instead of blocking)
 WP0 docs fix (S) ──┐
 WP4 static batch (S) ─────────────────────────┐
 WP3 coverage ledger (S code) ─┐               │
@@ -53,11 +54,53 @@ WP10 launcher (S, new launcher/ folder) — parallel; its Setup/error pages wait
 WP11 mod support, WP12 music tool — later, after WP10
 ```
 
-- Only one package with game runs at a time (one GPU, one game window).
+- Only one package with game runs at a time on each machine. With WPF in place, 1x runs go to the laptop and
+  scaled/perf runs stay on Chi, so one of each can be in flight.
 - WP0, WP4, WP7 and the code half of WP3 can go to parallel sessions: they touch no shared files with WP1/WP2.
 - Batch all new cvars/diagnostics of a session into one DLL build (each rebuild of the DLL target is ~10 min).
 
 ## 3. Work packages
+
+### WPF Laptop test farm (first; S on Chi, then one hand-off to the laptop session)
+How UFC, RRXX and SvR07 test (read `E:\ClaudeGame\TestFarm\JOB-RUNNER.md`, `SVR07-JOBS.md` (closest model: a
+native-renderer project), `LAPTOP-DISK-NOTE.md`, and UFC's `tools/nr_farm_job.py`):
+- Chi (this desktop) is the coordinator. A Claude session on the laptop (RTX 4060 8 GB) runs `farm_runner.py`,
+  which takes the oldest `\\192.168.1.253\TestFarm\jobs\<game>-*.json`, syncs the frozen build from
+  `TestFarm\builds\<tag>\bin` to C:, runs the game's Python self-test tool, and copies the run (no `game\`/`userdata\`)
+  plus `result.json` + `console.txt` to `TestFarm\results\<run>\`. One line per job in `results\runner-log.txt`.
+- Each game joins by writing a `<GAME>-JOBS.md` in TestFarm for the laptop session: one-time local copy, per-job
+  sync, exact constant lines to patch in its self-test tool, run command, results. Priority today: UFC, then rrxx,
+  then svr07; eamma goes last unless the user says otherwise.
+- Laptop rules that bind EA MMA: **1x only**, one game at a time, run from C: only, write on Chi only inside
+  TestFarm, local run folders are deleted once results land (results\ is the only copy: keep dumps small), C: free
+  space checked before each job. Input scripts are timed on Chi; the laptop boots ~15-17 s later, so scripts get
+  shifted copies under `tools/selftest_scripts/laptop/`.
+- What this changes for EA MMA: game runs stop waiting on Rumble Roses (it owns Chi's GPU, not the laptop's) and
+  sessions queue jobs and keep doing static work instead of blocking on each 2-4 minute run. Runs that need more than
+  1x (WP2 at 1.5x/2x/3x, the WP8 ladder) and anything timing-critical on the reference GPU stay on Chi.
+
+Steps:
+1. `tools/eamma_selftest.py` (Python port of `tools/run_shots.ps1`, `py -I`, stdlib + Pillow for a contact sheet):
+   constants on their own lines the laptop can patch (`RUNS = r'E:\ClaudeGame\EAMMA-tests\selftest'`,
+   `SAVE = ...userdata`, `RRXX_LOCK = ...selftest.lock`, `LOCAL_AI = ...`); args `<run> --script --secs --every
+   --set k=v --exe-dir --scale --renderer emu|native`; copies the save per run (the original stays untouched);
+   exit 0 ok, 1 game failed, 2 not launched (lock/hold). Same output layout as UFC's (`shots\`, `test.log`, `sheet.jpg`).
+   Keep `run_shots.ps1` for quick local runs.
+2. `tools/eamma_farm_job.py`, modelled on UFC's `nr_farm_job.py`: freeze `eamma.exe`, `eamma_MMADLLzf_xex.dll`,
+   the other `*.dll`, `shader_cache*.bin` (and `pipelines_seed.bin` once WP7 has it) into
+   `TestFarm\builds\eamma-<tag>\bin`, then write an emulated + native job pair (`eamma-<tag>-emu.json`,
+   `eamma-<tag>-native.json`, same script) to `TestFarm\jobs\hold\eamma-staged`. Write JSON with `json.dump`, never a
+   shell heredoc (UNC backslashes). Move jobs into `jobs\` only when no higher-priority game's jobs are queued.
+3. `E:\ClaudeGame\TestFarm\EAMMA-JOBS.md` for the laptop session, in the SVR07-JOBS.md format: local copy of
+   `assets\` (6.3 GB, the user's own disc dump: laptop only) and `userdata\` (55 MB) to `C:\ClaudeGame\EAMMA\`,
+   per-job sync, patch lines, run command (`--scale 1`, native adapter cvar set to the 4060 by the job, not the
+   runner), results, first job `eamma-lap-boot` (boot_taps, shots every 1 s, to measure the laptop's boot offset).
+4. Ask the user to tell the laptop session to read `EAMMA-JOBS.md` (the laptop session acts only on the user's word).
+5. Laptop copy of `boot_taps.txt` shifted by the measured offset; rerun once.
+- Pass: an `eamma-lap-boot` native + emulated pair lands in `TestFarm\results\` with shots that reach the fight, and
+  `results\laptop-eamma-ready.md` from the laptop session says what worked.
+- From then on, every package's "Test" line can be queued with `eamma_farm_job.py` instead of run here; packages
+  still record the run tag in the handoff's "in flight" block.
 
 Every package ends with: pass line met, docs updated (ISSUES + HANDOFF in the same commit), local commit.
 Every new code path gets an off switch (guide: "every new path gets an off bit"); grep the cvar help text for free
