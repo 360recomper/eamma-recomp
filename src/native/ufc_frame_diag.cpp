@@ -33,6 +33,9 @@ REXCVAR_DEFINE_INT32(svr_frame_diag_ms, 0, "SvR",
 REXCVAR_DEFINE_BOOL(eamma_native_perf, false, "eamma",
                     "Native renderer: one [nperf] line a second (draw-heavy scenes only) with where "
                     "the frame thread's time went, ms per frame");
+REXCVAR_DEFINE_INT32(eamma_native_perf_min_draws, 400, "eamma",
+                     "eamma_native_perf: no [nperf] line for seconds with fewer draws a frame than this "
+                     "(menus). EA MMA's fight is ~350 draws a frame: set 100 to see it (WP1)");
 REXCVAR_DEFINE_INT32(eamma_stall_trace_ms, 0, "eamma",
                      "Native renderer: when no frame has been presented for this many ms, write "
                      "every thread's stack to native_stall_trace.txt, again every 100 ms, up to 10 "
@@ -390,7 +393,7 @@ void SvrPerfTick(Clock::time_point now, double frame_ms, uint32_t draws) {
   for (size_t i = 0; i < kCounts; ++i)
     counts[i] = g_perf_counts[i].exchange(0, std::memory_order_relaxed);
 
-  if (draws_per_frame >= kPerfMinDraws) {
+  if (draws_per_frame >= double(REXCVAR_GET(eamma_native_perf_min_draws))) {
     std::sort(frames.begin(), frames.end());
     const auto at = [&](double q) { return double(frames[size_t(q * (n - 1.0))]); };
     std::string line = fmt::format(

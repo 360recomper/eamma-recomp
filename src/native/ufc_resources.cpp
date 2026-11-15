@@ -55,14 +55,19 @@ REXCVAR_DEFINE_INT32(svr_render_scale, 0, "SvR",
 REXCVAR_DEFINE_DOUBLE(eamma_native_scale, 0.0, "eamma",
                       "Native renderer: internal resolution as a multiple of 1280x720, in steps of "
                       "0.25 up to 4 (1.5 = 1080p, 2 = 1440p, 3 = 4K). 0 = the game's resolution_scale");
-REXCVAR_DEFINE_STRING(eamma_native_keep1x, "1024x512,384x64,64x64", "eamma",
+REXCVAR_DEFINE_STRING(eamma_native_keep1x, "1024x512,1024x1024,480x270,64x64", "eamma",
                       "Native renderer: guest sizes (WxH, comma-separated) of surfaces and resolve "
-                      "textures that stay 1x at any scale: the face liquid map (1024x512), the ambient "
-                      "cube and its sheet (64x64, 384x64). A resolve between a 1x and a scaled target "
-                      "copies the whole surface, so list both ends; a resolve target takes the scale "
-                      "of the surface it is first resolved from. 16-bit float targets (the blood "
-                      "particle state) always stay 1x; so does the mat stain map, see "
-                      "eamma_native_keep1x_stain");
+                      "textures that stay 1x at any scale. EA MMA's list (WP2): 1024x512 = the fighter "
+                      "composite the CPU reads back, 1024x1024 = the scratch surface its mips are resolved "
+                      "from (both ends 1x = exact console copies, no stretched resolve), 480x270 = the SSAO "
+                      "position/normal buffer, its depth and its result (packed values: never filtered), "
+                      "64x64 = the small lighting target. A resolve between a 1x and a scaled target copies "
+                      "the whole surface, so list both ends; a resolve target takes the scale of the surface "
+                      "it is first resolved from. See also eamma_native_keep1x_16f, eamma_native_keep1x_stain");
+REXCVAR_DEFINE_BOOL(eamma_native_keep1x_16f, true, "eamma",
+                    "Native renderer: 16-bit float targets stay 1x at any scale (UFC's rule for its blood "
+                    "particle state). EA MMA's 480x270 16F scene buffer falls under it while its depth scales "
+                    "(WP2 / B11); false = 16F targets scale like the rest");
 REXCVAR_DEFINE_BOOL(eamma_native_keep1x_stain, true, "eamma",
                     "Native renderer: the mat blood stain map (256x256, its surface and its 565 "
                     "resolve texture) stays 1x at any scale. false = scaled: mat blood slides");
@@ -316,15 +321,17 @@ bool Keep1xStain(u32 width, u32 height) {
 }
 
 // At 1x nothing is marked: every target is at guest size anyway, and resolves stay as they were.
+bool Keep1x16F() { return REXCVAR_GET(eamma_native_keep1x_16f); }
+
 bool Keep1xApplies() { return !Ratio().whole_only && Ratio().num != Ratio().den; }
 
 bool Keep1xSurface(u32 width, u32 height, u32 format) {
-  return Keep1xApplies() && (format == kSurface16F || Keep1xListed(width, height) ||
+  return Keep1xApplies() && ((format == kSurface16F && Keep1x16F()) || Keep1xListed(width, height) ||
                              (format == kSurfaceStain && Keep1xStain(width, height)));
 }
 
 bool Keep1xTexture(u32 width, u32 height, u32 fetch_format) {
-  return Keep1xApplies() && (fetch_format == kFetch16F || Keep1xListed(width, height) ||
+  return Keep1xApplies() && ((fetch_format == kFetch16F && Keep1x16F()) || Keep1xListed(width, height) ||
                              (fetch_format == kFetch565 && Keep1xStain(width, height)));
 }
 
@@ -443,7 +450,7 @@ GuestTexture *SvrResolveTarget(u32 texture_va, const GuestTexture *source, bool 
   // size (the career composite's 1024x512 skin, resolved region by region from a scaled 2048x1024
   // surface, matched the liquid map's size and every region was stretched from the whole surface).
   // 16-bit float state stays 1x either way. eamma_native_off bit 16384: by size only, as in NR-11.
-  if (source && Keep1xApplies() && u32(fetch.format) != kFetch16F &&
+  if (source && Keep1xApplies() && (u32(fetch.format) != kFetch16F || !Keep1x16F()) &&
       !(REXCVAR_GET(eamma_native_off) & 16384) && source->keep1x != keep1x) {
     BD_INFO("SvR target 0x{:08X}: {}x{} {} like its source {}x{}", texture_va, width, height,
             source->keep1x ? "kept 1x" : "scaled", source->width, source->height);

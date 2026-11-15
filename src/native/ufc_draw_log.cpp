@@ -10,11 +10,13 @@
 #include "ufc_draw_log.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdio>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -43,6 +45,11 @@ REXCVAR_DEFINE_STRING(eamma_native_draw_log_rt, "", "eamma",
                       "Native renderer dev aid: WxH. Every draw, clear and resolve while a render target "
                       "of this host size is bound is logged ([drawlog] lines), up to a few thousand lines: "
                       "for passes that last one frame at no fixed time (2048x1024 = the CAF composites)");
+
+REXCVAR_DEFINE_BOOL(eamma_native_coverage, false, "eamma",
+                    "Native renderer dev aid (WP3 coverage ledger): one [cover] line for each new vertex/pixel "
+                    "shader pair, render target size/format, resolve signature, and each shader pair drawn with "
+                    "alpha-to-mask or polygon offset. tools/nr_coverage.py merges run logs. Off = no cost");
 
 namespace bd::gpu {
 namespace {
@@ -100,6 +107,64 @@ std::atomic<u64> g_key_frame{0};  // the frame F9 (or eamma_native_draw_log_at) 
 // Laptop farm jobs can only pass cvars (--set), and frame numbers there depend on boot timing:
 // eamma_native_draw_log_at=70,95.5 logs the first frame presented after each of those seconds since
 // the first present. Called once per presented frame.
+// eamma_native_coverage (WP3): what has been drawn so far, one line per new thing.
+bool CoverageOn() {
+  static const bool on = REXCVAR_GET(eamma_native_coverage);
+  return on;
+}
+
+template <typename K>
+bool CoverageNew(std::vector<K> &seen, const K &key) {
+  if (std::find(seen.begin(), seen.end(), key) != seen.end())
+    return false;
+  seen.push_back(key);
+  return true;
+}
+
+void CoverageDraw(u32 device_guest) {
+  static std::mutex s_lock;
+  static std::vector<std::pair<u64, u64>> s_pairs, s_mask, s_offset;
+  static std::vector<std::array<u32, 6>> s_targets;
+  std::lock_guard<std::mutex> hold(s_lock);
+  auto &s = state();
+  const u64 vs = ShaderHash(s.vertex_shader), ps = ShaderHash(s.pixel_shader);
+  const std::pair<u64, u64> pair{vs, ps};
+  if (CoverageNew(s_pairs, pair))
+    BD_INFO("[cover] shaders VS {:016X} PS {:016X} frame {}", vs, ps, SvrFrameIndex());
+  const GuestTexture *rt = s.render_target, *ds = s.depth_stencil;
+  const std::array<u32, 6> target{rt ? rt->width : 0u,  rt ? rt->height : 0u, rt ? u32(rt->format) : 0u,
+                                  ds ? ds->width : 0u,  ds ? ds->height : 0u, ds ? u32(ds->format) : 0u};
+  if (CoverageNew(s_targets, target))
+    BD_INFO("[cover] target {}x{} format {} depth {}x{} format {} frame {}", target[0], target[1], target[2],
+            target[3], target[4], target[5], SvrFrameIndex());
+  // RB_COLORCONTROL (0x2202) bit 4 = alpha-to-mask; PA_SU_SC_MODE_CNTL (0x2205) bits 11-13 = polygon offset.
+  const u32 colorctl = bd::mem::load<u32>(device_guest + 0x2934u + 2u * 4u);
+  const u32 mode = bd::mem::load<u32>(device_guest + 0x2934u + 5u * 4u);
+  if ((colorctl & 0x10u) && CoverageNew(s_mask, pair))
+    BD_INFO("[cover] alpha-to-mask colorctl 0x{:08X} VS {:016X} PS {:016X} frame {}", colorctl, vs, ps,
+            SvrFrameIndex());
+  if ((mode & 0x3800u) && CoverageNew(s_offset, pair))
+    BD_INFO("[cover] polygon-offset mode 0x{:08X} VS {:016X} PS {:016X} frame {}", mode, vs, ps,
+            SvrFrameIndex());
+}
+
+void CoverageResolve(u32 device_guest, u32 flags, u32 source_rect_va) {
+  static std::mutex s_lock;
+  static std::vector<std::array<u32, 6>> s_seen;
+  std::lock_guard<std::mutex> hold(s_lock);
+  const GuestTexture *rt = state().render_target;
+  u32 w = 0, h = 0;
+  if (const auto *r = bd::mem::try_at<const D3DRect>(source_rect_va)) {
+    w = u32(i32(r->right) - i32(r->left));
+    h = u32(i32(r->bottom) - i32(r->top));
+  }
+  const std::array<u32, 6> key{flags, rt ? rt->width : 0u, rt ? rt->height : 0u, rt ? u32(rt->format) : 0u, w, h};
+  if (CoverageNew(s_seen, key))
+    BD_INFO("[cover] resolve flags 0x{:X} from {}x{} format {} rect {}x{} frame {}", flags, key[1], key[2], key[3],
+            w, h, SvrFrameIndex());
+  (void)device_guest;
+}
+
 void SvrDrawLogTick(u64 frame) {
   static const std::vector<double> times = [] {
     std::vector<double> out;
@@ -142,6 +207,8 @@ void SvrDrawLogNextFrame() {
 
 void SvrDrawLogDraw(u32 device_guest, const char *name, u32 primitive, bool indexed, u32 count,
                     u32 start, i32 base) {
+  if (CoverageOn())
+    CoverageDraw(device_guest);
   // SVR_LOG_PS=<hash hex> (env): one line per second while draws use that pixel shader (frame index
   // and how many draws), to find the scenes that draw it (A3 light shafts: 1CCBA38AC6B29550).
   {
@@ -387,17 +454,20 @@ void SvrDrawLogDraw(u32 device_guest, const char *name, u32 primitive, bool inde
         v += fmt::format(" {:08X}({:.4g})", w, f);
       }
     std::string c;
-    for (u32 r : {0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u, 156u, 157u, 158u, 159u})
+    for (u32 r : {0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u, 156u, 157u, 158u, 159u, 204u, 253u, 254u, 255u})
       c += fmt::format(" c{}={:.4g},{:.4g},{:.4g},{:.4g}", r, float(dev->vsFloatConstants[r][0]),
                        float(dev->vsFloatConstants[r][1]), float(dev->vsFloatConstants[r][2]),
                        float(dev->vsFloatConstants[r][3]));
     BD_INFO("[drawlog]   vb fetch {:08X} {:08X} stride {} vertex {}:{}", f0, f1, stride, first, v);
     BD_INFO("[drawlog]   vs{}", c);
+    SvrDrawLogIndices(device_guest, start);
   }
 }
 
 void SvrDrawLogResolve(u32 device_guest, u32 flags, u32 source_rect_va, u32 dest_va,
                        u32 dest_point_va) {
+  if (CoverageOn())
+    CoverageResolve(device_guest, flags, source_rect_va);
   if (!SvrDrawLogActive())
     return;
   const auto *dev = bd::mem::at<const D3DDevice>(device_guest);

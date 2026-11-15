@@ -19,6 +19,12 @@
 
 !/tools/
 /tools/__pycache__/
+
+# Launcher (NATIVE-FINISH-DESIGN.md WP10): C# sources only, no build output.
+!/launcher/
+/launcher/bin/
+/launcher/obj/
+/launcher/publish/
 *.pyc
 
 # Native renderer (NATIVE-PLAN.md EN-2). plume and XenosRecomp are fetched and patched by

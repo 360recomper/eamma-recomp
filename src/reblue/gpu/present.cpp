@@ -45,6 +45,11 @@ REXCVAR_DEFINE_DOUBLE(eamma_native_sharpness, 1.0, "eamma",
                       "1.0, not AMD's 0.2: 0.2 made skin visibly grainy at 1x (nr13-f1 vs -f1s1)");
 #endif
 
+REXCVAR_DEFINE_INT32(eamma_native_fps_limit, 0, "eamma",
+                     "Native renderer: host frame limiter after each present, frames a second (sleep until the "
+                     "next slot). 0 = off (default): the game paces itself on the guest vblank, and a second 60 Hz "
+                     "clock here made fight frames miss it (FINDINGS-perf.md). Movies stay at 30");
+
 namespace bd::gpu {
 
 namespace {
@@ -60,7 +65,8 @@ constexpr i32 kIdleFPS = 30;
 void PaceFrame(bool idle = false) {
   using Clock = std::chrono::steady_clock;
   static Clock::time_point next{};
-  i32 fps = bd::engine::Settings::Get().FPSLimit();
+  // WP1: EA MMA paces itself on the guest vblank; a second 60 Hz clock here beats against it.
+  i32 fps = REXCVAR_GET(eamma_native_fps_limit);
   if (bd::engine::SofdecPlayer::Playing())
     fps = 30;
   if (idle && (fps <= 0 || fps > kIdleFPS))

@@ -33,6 +33,7 @@ void SvrBindDrawGeometry(u32 device_guest, bool indexed);
 
 // Draw log: stream 0's fetch constant and first vertices as guest memory holds them right now.
 void SvrDrawLogStream0(u32 device_guest);
+void SvrDrawLogIndices(u32 device_guest, u32 start_index);
 
 // UFC: D3D12 has no triangle fans (plume asserts on one), and UFC's menus draw them. A fan is drawn
 // as an indexed triangle list instead: (first, i, i + 1) for each triangle. Both bind a 16- or

@@ -36,6 +36,10 @@
 #include "gpu/pipeline/pipeline_cache.h"
 #include "gpu/pipeline/pso_recorder.h"
 
+#include <rex/cvar.h>
+
+REXCVAR_DECLARE(int32_t, eamma_native_off2);
+
 namespace bd::gpu {
 namespace {
 
@@ -244,6 +248,19 @@ void ReadDeviceRenderState(VideoState &s, u32 device_guest) {
       alpha_test = false;
       break;
     }
+    }
+  }
+  // WP6 / A7: RB_COLORCONTROL ALPHA_TO_MASK_ENABLE [4]. Every host surface is 1 sample and alpha-to-coverage is
+  // off (SetAlphaTestMode), so such a draw would come out opaque. At 1 sample the console's mask is "covered or
+  // not" around half alpha: imitate it with an alpha test at 0.5 (kept above the game's own reference when its
+  // test is on with a >= form). eamma_native_off2 bit 2 = the old path (opaque).
+  if ((color_control & 0x10u) && !(REXCVAR_GET(eamma_native_off2) & 2)) {
+    const float mask_threshold = 127.5f / 255.0f;
+    if (!alpha_test) {
+      alpha_test = true;
+      alpha_threshold = mask_threshold;
+    } else if (alpha_threshold >= 0.0f && alpha_threshold < mask_threshold) {
+      alpha_threshold = mask_threshold;
     }
   }
   Video::SetAlphaTestMode(alpha_test);

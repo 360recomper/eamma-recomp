@@ -13,6 +13,8 @@ include(generated/rexglue.cmake)
 
 set(EAMMA_SOURCES
     src/main.cpp
+    src/gpu_preference.cpp
+    src/eamma_renderer_fail.cpp
 )
 
 if(WIN32)
@@ -22,6 +24,10 @@ else()
 endif()
 
 rexglue_setup_target(eamma GPU_PLUGINS xenos)
+if(WIN32)
+    # src/eamma_renderer_fail.cpp names the graphics card and its Direct3D 12 feature level.
+    target_link_libraries(eamma PRIVATE d3d12 dxgi)
+endif()
 
 # Diagnostics linked into the game DLL (camera imports now come from the EA MMA SDK copy) (target from generated/default/dll_targets.cmake).
 if(TARGET eamma_MMADLLzf_xex)

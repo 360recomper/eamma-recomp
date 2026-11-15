@@ -18,6 +18,8 @@
 #include <filesystem>
 #include <string>
 
+#include "eamma_renderer_fail.h"
+
 // Defaults Fight Night Champion (same EA engine family) runs with, from FNC Reborn's FNCReborn.toml
 // (whompay/FNCReborn). Applied unless the same cvar is on the command line.
 namespace eamma_defaults {
@@ -61,6 +63,13 @@ REXCVAR_DEFINE_BOOL(eamma_invalid_fetch, true, "eamma",
 REXCVAR_DEFINE_STRING(eamma_renderer, "emulated", "eamma",
                       "Renderer: emulated (Xenos GPU emulation, default) or native (plume D3D12, not "
                       "implemented yet)");
+// WP7 release set (src/eamma_renderer_fail.h). The launcher reads the exit code and native-error.txt.
+REXCVAR_DEFINE_BOOL(eamma_native_fail_report, true, "eamma",
+                    "Native renderer: when it can't start (no shader cache, no Direct3D 12 device), write "
+                    "native-error.txt beside the exe, tell the player and exit with code 3 (device) or 4 "
+                    "(shader cache). false = the old behaviour: a log line and exit code 3, no cache check");
+REXCVAR_DEFINE_BOOL(eamma_native_test_device_fail, false, "eamma",
+                    "Test only: native acts as if the host device failed (exit code 3)");
 
 class EammaApp : public rex::ReXApp {
  public:
@@ -117,7 +126,26 @@ class EammaApp : public rex::ReXApp {
   void OnPreSetup(rex::RuntimeConfig& config) override {
     native_ = LatchRenderer();
 #if defined(EAMMA_NATIVE_HOOKS)
-    if (native_ && !native_bridge_.Load()) native_ = false;
+    if (native_ && !native_bridge_.Load()) {
+      if (REXCVAR_GET(eamma_native_fail_report)) {
+        eamma_renderer_fail::Fail(eamma_renderer_fail::kDeviceFailed,
+                                  "the native renderer could not be loaded from eamma_MMADLLzf_xex.dll");
+      }
+      REXLOG_WARN("native: using the emulated renderer (eamma_native_fail_report is off)");
+      native_ = false;
+    }
+    if (native_ && REXCVAR_GET(eamma_native_fail_report)) {
+      // No shader cache (eamma_shader_cache, relative = beside the exe; the cvar is in the game DLL,
+      // loaded just above): native would draw nothing. The launcher builds it before every Play.
+      std::filesystem::path cache = rex::to_path(rex::cvar::GetFlagByName("eamma_shader_cache"));
+      if (cache.empty()) cache = "shader_cache.bin";
+      if (cache.is_relative()) cache = rex::filesystem::GetExecutableFolder() / cache;
+      std::error_code ec;
+      if (!std::filesystem::is_regular_file(cache, ec)) {
+        eamma_renderer_fail::Fail(eamma_renderer_fail::kCacheMissing,
+                                  "the shader cache is missing (" + rex::path_to_utf8(cache) + ")");
+      }
+    }
     if (native_) {
       native_bridge_.enable(true);
       // EN-3: the game's command-buffer objects are drawn directly (its own fallback path), so the
@@ -150,8 +178,9 @@ class EammaApp : public rex::ReXApp {
     }
   }
 #if defined(EAMMA_NATIVE_HOOKS)
-  // Exit code when the native device can't be created (UFC's launcher restarts on emulated).
-  static constexpr int kNativeDeviceFailedExitCode = 3;
+  // Exit code when the native device can't be created; the launcher shows why from
+  // native-error.txt (src/eamma_renderer_fail.h). Never a switch to the emulated renderer.
+  static constexpr int kNativeDeviceFailedExitCode = eamma_renderer_fail::kDeviceFailed;
 
   void OnPreLaunchModule() override {
     if (!native_) return;
@@ -161,8 +190,22 @@ class EammaApp : public rex::ReXApp {
       dir = std::filesystem::path(log_file).parent_path();
     native_bridge_.crash_trace(dir.string().c_str());
     REXLOG_INFO("native: crash and hang traces go to {}", dir.string());
+    const bool report = REXCVAR_GET(eamma_native_fail_report);
+    if (REXCVAR_GET(eamma_native_test_device_fail)) {
+      if (report) {
+        eamma_renderer_fail::Fail(eamma_renderer_fail::kDeviceFailed,
+                                  "test: eamma_native_test_device_fail is set");
+      }
+      REXLOG_ERROR("native: test: eamma_native_test_device_fail is set");
+      rex::FlushLogging();
+      std::_Exit(kNativeDeviceFailedExitCode);
+    }
     if (!native_bridge_.create_device(window())) {
-      REXLOG_ERROR("native: host device creation failed; restart with --eamma_renderer=emulated");
+      if (report) {
+        eamma_renderer_fail::Fail(eamma_renderer_fail::kDeviceFailed,
+                                  "Direct3D 12 device creation failed");
+      }
+      REXLOG_ERROR("native: host device creation failed");
       rex::FlushLogging();
       std::_Exit(kNativeDeviceFailedExitCode);
     }
@@ -197,7 +240,7 @@ class EammaApp : public rex::ReXApp {
         request_resize = reinterpret_cast<void (*)()>(GetProcAddress(m, "EammaNativeRequestResize"));
       }
       const bool ok = enable && crash_trace && create_device && request_resize;
-      if (!ok) REXLOG_ERROR("native: renderer exports missing in {}, using the emulated renderer", path.string());
+      if (!ok) REXLOG_ERROR("native: renderer exports missing in {}", path.string());
       return ok;
     }
   };

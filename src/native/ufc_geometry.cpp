@@ -535,6 +535,29 @@ void IndexBufferUnlocked(u32 ib_va) {
 
 }  // namespace
 
+// Draw log: the bound index buffer as the game wrote it (A6: the crowd packs its instance in the high index bits).
+void SvrDrawLogIndices(u32 device_guest, u32 start_index) {
+  const auto *device = bd::mem::at<const D3DDevice>(device_guest);
+  if (!device)
+    return;
+  const auto *ib = bd::mem::try_at<const D3DIndexBuffer>(u32(device->indexBuffer));
+  if (!ib)
+    return;
+  const u32 common = ib->resource.Common;
+  const bool wide = (common & 0x80000000u) != 0;
+  const u32 at = u32(ib->FetchLo) + start_index * (wide ? 4u : 2u);
+  std::string words;
+  if (const u8 *src = GpuMemory(SvrGpuAddress(at) & ~3u, 32u)) {
+    for (u32 k = 0; k < 8u; ++k) {
+      u32 word;
+      std::memcpy(&word, src + k * 4u, 4);
+      words += fmt::format(" {:08X}", rex::byte_swap(word));
+    }
+  }
+  BD_INFO("[drawlog]   ib 0x{:08X} common {:08X} {} endian {} bytes {} memory{}", u32(device->indexBuffer), common,
+          wide ? "INDEX32" : "INDEX16", (common >> 29) & 3u, u32(ib->FetchHi), words);
+}
+
 void SvrDrawLogStream0(u32 device_guest) {
   const auto *device = bd::mem::at<const D3DDevice>(device_guest);
   if (!device)

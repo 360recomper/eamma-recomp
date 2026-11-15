@@ -59,17 +59,40 @@ step you touch. The user wants work to continue step to step without asking for 
 - Command buffers carry ~15% of fight draws; natively they are turned off (game's own fallback path).
 - Present = Swap (no Present in this XDK); device 0x5F00, SvR-2010 offsets.
 
-## Next steps (suggested order; see NATIVE-ISSUES.md section E for the advisor's reasoning)
-1. Done today: A1 (loop start/step), A2 (gone with A1), A5 (stale geometry: every-draw compare is the default),
-   A3 translated (run-time loop constants), setTexLOD, B7 off. Next: see light shafts on screen (find a scene that
-   draws PS 1CCBA38A), A4 broader A/B (career, create-a-fighter, other venues), MSAA (the main scene is 4x on console).
-   Scaling: `--eamma_native_scale=2` renders boot/menus/fight/results correctly at 2560x1440 (n75scale2; 30 presents/s in menus/intros, 48.8/s in the fight at both 1x and 2x, unexplained: WP1);
-   open item B10 (mixed-scale resolve stretches the whole surface).
-2. Depth bias: never fed (pipeline/pipeline_cache.cpp:105), but no logged draw enables polygon offset (PA_SU_SC_MODE_CNTL
-   is only 0x18000 / 0x18002 in every draw log so far). Feed it when a scene shows bits 11/12.
-3. (done: capture drops oldest; depthFlip gated on VTE z-scale.)
-4. A2 halo: probably gone (no halo in n73default/015 vs en3d/015); confirm with one menu pair in WP5.
-5. B7: done, eager write-back off by default (n43nowb).
-6. Census as a run-time switch: deferred. The native hooks already own 14 of its 26 counted functions plus
-   Swap/Clear/Resolve/draws, so its counters would have to move into those hooks (hours, low value for now).
-7. A3 light shafts (integer constants), then speed, scaling, the guide's Week 2.
+## State (2026-11-15 evening; keep these three blocks current at every commit)
+
+### True now
+- **WP0 passed** (950e8b2). **WP3 passed**: `--eamma_native_coverage=true` prints `[cover]` lines,
+  `py -I tools/nr_coverage.py <run dir>...` reports them (run b1: 70 of 240 pixel shaders drawn in boot -> fight).
+  `config/native/shader_inventory.txt` (the list of all 240) is not made yet: `nr_coverage.py --make-inventory <hlsl dir>`.
+- **WP4 passed**: FINDINGS-wp4-static.md (depth bias closed, light-shaft scene, SSAO pass, hair cards, MSAA audit).
+- **WP2 mostly passed**: EA's keep-1x list is the default (`1024x512,1024x1024,480x270,64x64`), 16F rule behind
+  `eamma_native_keep1x_16f`. Runs w2a and w2b (2x, w2b with the final list): zero stretch lines, no "not done", no capture-full, empty
+  stderr. Not run: 1.5x, 3x, the mip dump compare. w2b's 60 s shot shows a dark swirl on the mat behind the pause
+  menu and 75 s / 105 s fall on menu fades: compare with emulated before calling 2x clean.
+- **WP1 open, mostly closed**: fight 48.8 -> 60 presents/s in most seconds (run w2b: 40 of 63 fight seconds at 59+, mean 56.5), emulated 60. Defaults changed: host limiter off
+  (`eamma_native_fps_limit=0`), music-status poll every 30 calls (`eamma_xmp_status_every`). FINDINGS-perf.md has the
+  facts, what was ruled out and the next leads. `[nperf]` shows the fight only with `--eamma_native_perf_min_draws=100`.
+- **WP6 built, not judged**: alpha-to-mask draws (hair cards) get an alpha test at 0.5; off bit `eamma_native_off2` 2.
+- **WP7 mostly passed** (exports present in eamma.exe; run df1: forced device failure -> exit 3 + native-error.txt;
+  run b2 loaded the PSO seed). Still open: FSR run, exit 4 check, a launcher-built cache loaded by the game. Built: gpu_preference in the exe, device-fail path (`src/eamma_renderer_fail.*`, exit 3/4,
+  `native-error.txt`), `config/native/pipelines_seed.bin` (117 records; run b2 logged the seed line), C# shader cache
+  builder byte-identical to the Python one. FINDINGS-wp7-wp10.md lists the post-build checks. FSR run not done.
+- **WP10 port built**: `launcher/` compiles, its tests pass; not run against the real game or a disc image.
+- **A6 is bigger than thought**: the seated crowd never draws natively (NATIVE-ISSUES.md A6 has the draw and shader).
+  A8 (pause menu highlight bar) is new.
+- Unattended tools pass `--eamma_native_error_box=false` (eamma_selftest.py). Frozen builds older than today do not
+  know that cvar.
+
+### In flight
+- Nothing queued on the laptop. The build in out/build has all of the above.
+
+### Next command to type
+1. A6 crowd first (most visible defect): NATIVE-ISSUES.md A6. Reference run:
+   `py -I tools/eamma_selftest.py <tag> --script tools/selftest_scripts/boot_taps.txt --renderer native --scale 2
+   --secs 150 --every 15 --set eamma_native_draw_log_at=72 --set eamma_native_perf=true
+   --set eamma_native_perf_min_draws=100`: (= w2b). Its draw log has the crowd draws (VS 19010A0F...) with their `ib` and `vb fetch` lines.
+2. WP1 lead 1 (hook the guest fence waits with the `gwait` zone), FINDINGS-perf.md.
+3. WP5 mode scripts (career, create-a-fighter, venue select, replay) or ask the user for a human session; pick a
+   long-haired fighter for WP6; the career gym for light shafts (A3).
+4. WP8 ladder after WP1; WP10 first-run test with the user's disc image; WP9 only on the user's OK.

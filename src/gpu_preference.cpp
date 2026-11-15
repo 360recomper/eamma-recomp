@@ -1,4 +1,5 @@
-// ufc3 - NR-12c: ask hybrid-graphics drivers for the dedicated GPU.
+// eamma - ask hybrid-graphics drivers for the dedicated GPU (NATIVE-FINISH-DESIGN.md WP7; from
+// UFC's NR-12c). Compiled into eamma.exe (EAMMA_SOURCES in CMakeLists.txt), never the game DLL.
 //
 // NVIDIA Optimus and AMD PowerXpress / Switchable Graphics read these two exports from the
 // process's .exe (not from a DLL) when it starts, and then default the game to the dedicated GPU

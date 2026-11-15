@@ -433,7 +433,8 @@ def main():
         elif renderer != 'native':
             print('--renderer must be native or emulated'); return 2
         cv.update({'game_data_root': os.path.join(ROOT, 'assets'), 'user_data_root': rs, 'log_file': log,
-                   'gpu_backend': opt['--backend'], 'eamma_renderer': renderer})
+                   'gpu_backend': opt['--backend'], 'eamma_renderer': renderer,
+                   'eamma_native_error_box': 'false'})  # unattended: a renderer failure must not stop on a box
         if renderer == 'native':
             cv['eamma_native_scale'] = opt['--scale']
         else:

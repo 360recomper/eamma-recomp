@@ -79,7 +79,8 @@ REXCVAR_DEFINE_INT32(eamma_native_off, 0, "eamma",
 REXCVAR_DEFINE_INT32(eamma_native_off2, 0, "eamma",
                      "Native renderer dev switch, more bits of eamma_native_off (set = the old path): "
                      "1 filling the half-pixel gap at the left/top of scaled colour resolves (the "
-                     "first covered host column/row copied over the uncovered ones, NR-CE1)");
+                     "first covered host column/row copied over the uncovered ones, NR-CE1), "
+                     "2 the alpha-to-mask fallback (alpha test at 0.5 for draws with ALPHA_TO_MASK, WP6)");
 REXCVAR_DEFINE_INT32(eamma_native_list_split_us, 2000, "eamma",
                      "Native renderer (NR-14c): the frame's command list goes to the GPU, with no "
                      "wait, at the first draw this many microseconds after it was opened (at most 8 "
