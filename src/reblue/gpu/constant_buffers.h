@@ -47,7 +47,9 @@ struct SharedConstants {
   // multiplies each by this to hold the penumbra constant in world space.
   // max(1/distance, 1024/dimension) never scales a tap below one map texel.
   float shadowPcfScale{1.0f}; // c20.z, byte 328
-  u32 _pad_c20_w{};           // c20.w, byte 332
+  // EA MMA (EN-5): 1 = the game's viewport depth range is inverted (MinZ > MaxZ). D3D12 needs
+  // MinZ <= MaxZ, so FlushViewport swaps the range and the vertex shader flips z (g_DepthFlip).
+  float depthFlip{};          // c20.w, byte 332
   // Half-pixel NDC nudge read only by the substituted 2D blit VS
   float blitHalfPixelOffsetX{}; // c21.x, byte 336
   float blitHalfPixelOffsetY{}; // c21.y, byte 340

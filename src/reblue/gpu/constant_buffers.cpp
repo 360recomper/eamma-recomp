@@ -861,6 +861,7 @@ ConstantAllocation UploadSharedConstants(u32 device_guest) {
       vs.vertex_declaration ? vs.vertex_declaration->sintTexcoords : 0u;
 
   s.shared.shadowPcfScale = s.shadowPcfScale;
+  s.shared.depthFlip = vs.viewport.minDepth > vs.viewport.maxDepth ? 1.0f : 0.0f;
 
 #if defined(SVR_NATIVE_RENDERER)
   s.shared.vertexIdBase = vs.vertex_id_base;

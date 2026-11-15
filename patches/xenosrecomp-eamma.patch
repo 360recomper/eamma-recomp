@@ -17,7 +17,7 @@ index 8c51476..05b2602 100644
                      XXH64_hash_t hash = XXH3_64bits(shaderContainer, dataSize);
                      auto shader = shaders.try_emplace(hash);
 diff --git a/XenosRecomp/shader_common.h b/XenosRecomp/shader_common.h
-index 6d8a497..7cdb140 100644
+index 6d8a497..3e65c6b 100644
 --- a/XenosRecomp/shader_common.h	
 +++ b/XenosRecomp/shader_common.h	
 @@ -5,6 +5,8 @@
@@ -40,7 +40,25 @@ index 6d8a497..7cdb140 100644
  // UFC 3: locations 16-19 (second bone set, COLOR2, PSIZE, BINORMAL) go past Vulkan's guaranteed 16;
  // fine on D3D12 (32 inputs), the only API UFC's native renderer builds.
  
-@@ -288,6 +292,12 @@ float4 tfetchCubeLod0(uint resourceDescriptorIndex, uint samplerDescriptorIndex,
+@@ -70,6 +74,9 @@ struct PushConstants
+ #define g_SwappedPositions         vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 320)
+ #define g_SintTexcoords            vk::RawBufferLoad<uint>(g_PushConstants.SharedConstants + 324)
+ #define g_ShadowPcfScale           vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + 328)
++// EA MMA: 1 when the game's viewport depth range is inverted (MinZ > MaxZ, its reversed-Z buffer).
++// D3D12 needs MinZ <= MaxZ, so the host swaps the range and the vertex shader flips z instead.
++#define g_DepthFlip                vk::RawBufferLoad<float>(g_PushConstants.SharedConstants + 332)
+ // SvR 2008: window-pixel to clip-space conversion for draws made with the viewport transform off
+ // (D3DRS_VIEWPORTENABLE FALSE: the vertex shader outputs window pixels); identity otherwise.
+ #define g_ScreenSpace              vk::RawBufferLoad<float4>(g_PushConstants.SharedConstants + 352)
+@@ -99,6 +106,7 @@ struct PushConstants
+     uint g_SwappedPositions : packoffset(c20.x); \
+     uint g_SintTexcoords : packoffset(c20.y); \
+     float g_ShadowPcfScale : packoffset(c20.z); \
++    float g_DepthFlip : packoffset(c20.w); \
+     float4 g_ScreenSpace : packoffset(c22); \
+     int g_VertexIdBase : packoffset(c23.x); \
+     uint2 g_VfetchStreamBytes : packoffset(c23.y); \
+@@ -288,6 +296,12 @@ float4 tfetchCubeLod0(uint resourceDescriptorIndex, uint samplerDescriptorIndex,
  // DEC3N normal decode; IA binds as R32_UINT so lane .x carries the raw bits (asuint recovers them).
  float4 tfetchR11G11B10(float4 value)
  {
@@ -54,7 +72,7 @@ index 6d8a497..7cdb140 100644
      {
          uint v = asuint(value.x);
 diff --git a/XenosRecomp/shader_recompiler.cpp b/XenosRecomp/shader_recompiler.cpp
-index c72574a..d9e9f00 100644
+index c72574a..da6e101 100644
 --- a/XenosRecomp/shader_recompiler.cpp	
 +++ b/XenosRecomp/shader_recompiler.cpp	
 @@ -408,15 +408,15 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
@@ -76,3 +94,12 @@ index c72574a..d9e9f00 100644
          print("tfetchR11G11B10(swapFloats(g_SwappedBinormals, ");
          break;
      case DeclUsage::BlendWeight:
+@@ -2644,6 +2644,8 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+                     {
+                 #ifdef REBLUE_RECOMP
+                         out += "\toPos.xy = oPos.xy * g_ScreenSpace.xy + g_ScreenSpace.zw * oPos.w;\n";
++                        // EA MMA: inverted viewport depth range (g_DepthFlip, shader_common.h).
++                        out += "\tif (g_DepthFlip != 0.0) oPos.z = oPos.w - oPos.z;\n";
+                 #endif
+                         out += "\toPos.xy += g_HalfPixelOffset * oPos.w;\n";
+                     }

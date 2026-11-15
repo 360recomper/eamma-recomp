@@ -62,6 +62,7 @@
 #define D3DDevice_SetPixelShaderConstantF     sub_88310B88
 // EA's real constant path (EN-5): LOAD_ALU_CONSTANT from a memory pointer, see eamma_constant_loads.cpp.
 #define D3DDevice_GpuLoadShaderConstantF4Pointer sub_883198E0
+#define D3DDevice_GpuBeginShaderConstantF4    sub_88319858
 
 // Recorded work (one record site and one replay site in the game, FINDINGS-en1 §5)
 #define D3DDevice_BeginCommandBuffer          sub_8831CEB0
@@ -105,6 +106,7 @@
 #define __imp__D3DDevice_SetVertexShaderConstantF __imp__sub_88310AB0
 #define __imp__D3DDevice_SetPixelShaderConstantF  __imp__sub_88310B88
 #define __imp__D3DDevice_GpuLoadShaderConstantF4Pointer __imp__sub_883198E0
+#define __imp__D3DDevice_GpuBeginShaderConstantF4 __imp__sub_88319858
 #define __imp__D3DVertexBuffer_Unlock         __imp__sub_8830D3B8
 #define __imp__D3DIndexBuffer_Unlock          __imp__sub_8830D4C0
 #define __imp__D3DDevice_BeginCommandBuffer   __imp__sub_8831CEB0

@@ -8,6 +8,11 @@
 // it runs the packet, so the device's constant block never holds those registers, and the native
 // renderer, which uploads from that block, drew every mesh with a zero matrix.
 //
+// The other half of that path: D3DDevice_GpuBeginShaderConstantF4 sub_88319858(dev, type, start
+// register, register count) reserves a SET_CONSTANT packet in the ring and returns a pointer to its
+// data; the caller (sub_888B5838) memcpys the constants there (bone palettes, crowd instance data).
+// Those are recorded with the returned pointer and copied the same way.
+//
 // Each call is recorded here; at the next native draw (the game has filled the buffer by then) the
 // registers are copied into the device's constant block, where constant_buffers.cpp reads them.
 // The registers are GPU-owned for the game's D3D, so it neither flushes nor reads those slots.
@@ -69,5 +74,22 @@ extern "C" REX_FUNC(D3DDevice_GpuLoadShaderConstantF4Pointer) {
       g_pending.push_back({ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32});
   }
   __imp__D3DDevice_GpuLoadShaderConstantF4Pointer(ctx, base);
+}
+#endif
+
+#if defined(D3DDevice_GpuBeginShaderConstantF4)
+REX_EXTERN(__imp__D3DDevice_GpuBeginShaderConstantF4);
+extern "C" REX_FUNC(D3DDevice_GpuBeginShaderConstantF4) {
+  const u32 dev = ctx.r3.u32, type = ctx.r4.u32, start = ctx.r5.u32, count = ctx.r6.u32;
+  __imp__D3DDevice_GpuBeginShaderConstantF4(ctx, base);
+  const u32 data = ctx.r3.u32;  // where the caller writes the constants next
+  if (g_eamma_native && data) {
+    static std::atomic<u32> s_logs{0};
+    if (s_logs.fetch_add(1, std::memory_order_relaxed) < 4)
+      REXLOG_INFO("native: constant ring write {} c{} x{} at {:08X}", type ? "PS" : "VS", start, count, data);
+    std::lock_guard lock(g_mutex);
+    if (g_pending.size() < 4096)
+      g_pending.push_back({dev, type, start, data, count});
+  }
 }
 #endif
