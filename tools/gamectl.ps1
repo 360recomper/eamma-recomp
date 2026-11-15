@@ -1,4 +1,4 @@
-﻿# Drive the eamma window for testing: send keys and grab screenshots.
+# Drive the eamma window for testing: send keys and grab screenshots.
 #   gamectl.ps1 shot <out.png>
 #   gamectl.ps1 keys "Return,Down,Down,Space" [holdMs] [gapMs]
 param([string]$cmd, [string]$arg, [int]$hold = 80, [int]$gap = 350, [int]$cropW = 1280, [int]$cropH = 720)
@@ -17,6 +17,8 @@ public static class W {
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint f);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
   public delegate bool EnumProc(IntPtr h, IntPtr l);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr l);
@@ -39,6 +41,9 @@ public static class W {
 }
 "@
 [W]::SetProcessDPIAware() | Out-Null
+
+# Needs no game window: run_shots asks for it before the game starts.
+if ($cmd -eq 'foreground') { Write-Output ([W]::GetForegroundWindow().ToInt64()); exit 0 }
 
 $p = Get-Process eamma -ErrorAction SilentlyContinue | Select-Object -First 1
 $h = if ($p) { [W]::FindGameWindow([uint32]$p.Id) } else { [IntPtr]::Zero }
@@ -87,6 +92,14 @@ switch ($cmd) {
       Start-Sleep -Milliseconds $gap
     }
     Write-Output "sent $arg"
+  }
+  'tuck' {
+    # Push the game window behind everything without activating it, then give focus back to the
+    # window that had it (arg = that window's handle). Keeps test runs off the user's screen.
+    $HWND_BOTTOM = [IntPtr]1; $SWP_NOSIZE = 0x1; $SWP_NOACTIVATE = 0x10
+    [W]::SetWindowPos($h, $HWND_BOTTOM, 40, 40, 0, 0, $SWP_NOSIZE -bor $SWP_NOACTIVATE) | Out-Null
+    if ($arg) { [W]::SetForegroundWindow([IntPtr][long]$arg) | Out-Null }
+    Write-Output "tucked"
   }
   'focus' { Focus; Write-Output "focused" }
   default { Write-Output "usage: shot <png> | keys <k1,k2,...>" }

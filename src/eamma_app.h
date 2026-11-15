@@ -12,6 +12,8 @@
 #include <rex/system/user_module.h>
 
 REXCVAR_DEFINE_STRING(gpu_backend, "vulkan", "GPU", "Graphics backend: vulkan or d3d12");
+REXCVAR_DEFINE_BOOL(eamma_invalid_fetch, true, "eamma",
+                    "Set gpu_allow_invalid_fetch_constants (sample textures whose fetch constant is typed invalid)");
 
 class EammaApp : public rex::ReXApp {
  public:
@@ -54,7 +56,8 @@ class EammaApp : public rex::ReXApp {
     // 467k warnings in 100 s for one real texture, 84024800 04AB3054 ...). The 360 samples them
     // anyway; the emulator default treats them as unbound, and the warning spam alone slowed the
     // boot. The flag lives in the GPU plugin, so set it after the plugin is loaded.
-    if (!rex::cvar::SetFlagByName("gpu_allow_invalid_fetch_constants", "true")) {
+    if (REXCVAR_GET(eamma_invalid_fetch) &&
+        !rex::cvar::SetFlagByName("gpu_allow_invalid_fetch_constants", "true")) {
       REXLOG_WARN("could not enable gpu_allow_invalid_fetch_constants");
     }
   }

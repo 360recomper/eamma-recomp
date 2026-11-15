@@ -13,7 +13,7 @@ for ($i = 1; $i -le $MaxRounds; $i++) {
   Remove-Item $log -ErrorAction SilentlyContinue
   $proc = Start-Process -FilePath "$exeDir\eamma.exe" -WorkingDirectory $exeDir -PassThru -ArgumentList `
     "--game_data_root=`"$($p.Replace('\','/'))/assets`"", "--user_data_root=`"$($p.Replace('\','/'))/userdata`"", `
-    "--gpu_backend=vulkan", "--log_file=`"$($log.Replace('\','/'))`"", "--log_level=info"
+    "--gpu_backend=vulkan", "--fullscreen=false", "--audio_mute=true", "--window_width=1280", "--window_height=720", "--log_file=`"$($log.Replace('\','/'))`"", "--log_level=info"
   $exited = $proc.WaitForExit($BootSeconds * 1000)
   if (-not $exited) {
     Stop-Process -Id $proc.Id -Force

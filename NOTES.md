@@ -34,6 +34,22 @@ GPU plugin load). UFC's `gpu_allow_invalid_fetch_constants` (a Yuke's engine fix
   Every few frames the CPU reads back a resolve (2 MB + 3 mips, 0x079A3000 / 0x0D0E1000 / 0x0DA49000 ...) and each 2 MB readback
   takes 2.2-3.5 s (`readback_resolve=ondemand`), so the game crawls far under 1 fps. Next: A/B `readback_resolve=fast` / `none`,
   find what the 2 MB readback is (likely a CPU-side luminance/exposure or a UI capture), and test runs that don't take over the desktop.
+- Test runs since 2026-11-14 22:00: `tools/run_shots.ps1` = 1280x720 window (`--fullscreen=false`; the SDK default is
+  fullscreen), `--audio_mute=true`, pushed behind other windows with focus handed back (`gamectl.ps1 tuck`).
+- Black screen, what is known (runs boot3-boot15):
+  - `readback_resolve=fast` removes the 2-3 s readback stalls; the game then runs at a steady 60 fps (`perf_second_summary`),
+    ~21 resolves and ~900 draws a frame. D3D12 is black too, so it is not a Vulkan issue; `eamma_invalid_fetch` on/off and
+    `integer_texture_fetch=off` change nothing.
+  - **The EA SPORTS boot movie (VP6) renders correctly** (shots/boot14repro/015.png); everything after it is black.
+  - VdSwap (`src/eamma_swap_trace.cpp`): one 1280x720 k_8_8_8_8 front buffer at E3CB2000 (physical 03CB3000). With
+    `readback_resolve=full` its guest bytes are a grey fade in the first frames, then opaque black (000000FF): the game
+    really renders black; the present is fine.
+  - Last draws before the front-buffer resolve are menu UI quads: VS D8A200AA39273B1B / PS 34B29856453FE506 (`oC0 = tex * vertex
+    colour`, colour = FMT_8_8_8_8 at dword 10 of a 48-byte vertex), ortho-like constants c4-c11 look right.
+  - The UI textures have real content (`texture_dump_ranges`: grey gradients, white panels), so the vertex colours (or the
+    vertices themselves) must be zero. vpkd3d128 (D3DCOLOR pack, 7 sites) reads correct against Xenia's lane order.
+  - Next: dump the vertex buffer of the traced draw in the same frame (the dump at swap 1500 was a different frame and the
+    region held other data), find which game code writes those vertices, and check the VMX128 ops it uses.
 - Not reached yet: menus, a fight.
 
 ## Seeded functions

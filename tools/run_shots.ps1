@@ -8,9 +8,16 @@ $d = "$p\out\build\win-amd64-relwithdebinfo"
 $out = "$p\shots\$Tag"; New-Item -ItemType Directory -Force $out | Out-Null
 $log = "$out\run.log"
 $argList = @("--game_data_root=`"$($p.Replace('\','/'))/assets`"", "--user_data_root=`"$($p.Replace('\','/'))/userdata`"",
-          "--gpu_backend=vulkan", "--log_file=`"$($log.Replace('\','/'))`"", "--log_level=info") + $Extra
+          "--gpu_backend=vulkan", "--fullscreen=false", "--audio_mute=true", "--window_width=1280", "--window_height=720", "--log_file=`"$($log.Replace('\','/'))`"", "--log_level=info") + $Extra
 if ($Script) { $argList += "--input_script=`"$($Script.Replace('\','/'))`"" }
+$prev = & "$PSScriptRoot\gamectl.ps1" foreground 2>$null
 $proc = Start-Process "$d\eamma.exe" -WorkingDirectory $d -PassThru -ArgumentList $argList
+# Tuck the window behind the user's windows as soon as it exists (and once more after the first frames).
+for ($i = 0; $i -lt 40; $i++) {
+  Start-Sleep -Milliseconds 250
+  if ((& "$PSScriptRoot\gamectl.ps1" tuck $prev) -eq "tucked") { break }
+}
+Start-Sleep 2; & "$PSScriptRoot\gamectl.ps1" tuck $prev | Out-Null
 for ($t = $Every; $t -le $Secs; $t += $Every) {
   if ($proc.WaitForExit($Every * 1000)) { "exited at ~${t}s code $($proc.ExitCode)"; break }
   & "$PSScriptRoot\gamectl.ps1" shot ("$out\{0:D3}.png" -f $t) -cropW 0 | Out-Null
