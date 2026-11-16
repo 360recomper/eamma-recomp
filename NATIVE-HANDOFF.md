@@ -79,7 +79,8 @@ step you touch. The user wants work to continue step to step without asking for 
   `native-error.txt`), `config/native/pipelines_seed.bin` (117 records; run b2 logged the seed line), C# shader cache
   builder byte-identical to the Python one. FINDINGS-wp7-wp10.md lists the post-build checks. FSR run not done.
 - **WP10 port built**: `launcher/` compiles, its tests pass; not run against the real game or a disc image.
-- **A6 is bigger than thought**: the seated crowd never draws natively (NATIVE-ISSUES.md A6 has the draw and shader).
+- **A6 fixed** (crowd draws; run c2): XenosRecomp now honours texel-coordinate fetches. The shader cache must be
+  rebuilt after this commit (`py -I tools/nr_build_shader_cache.py`), and `patches/xenosrecomp-eamma.patch` was regenerated.
   A8 (pause menu highlight bar) is new.
 - **Locked fighters unlocked by a hook** (`src/eamma_unlock.cpp`, `eamma_unlock_fighters`, FINDINGS-unlocks.md): run u1
   shows the hook firing at fighter select; the user will play-test picking them. Title updates #1/#2 are code-only
@@ -91,7 +92,7 @@ step you touch. The user wants work to continue step to step without asking for 
 - Nothing queued on the laptop. The build in out/build has all of the above.
 
 ### Next command to type
-1. A6 crowd first (most visible defect): NATIVE-ISSUES.md A6. Reference run:
+1. WP1 remainder, then WP5. Reference run (2x, all diagnostics):
    `py -I tools/eamma_selftest.py <tag> --script tools/selftest_scripts/boot_taps.txt --renderer native --scale 2
    --secs 150 --every 15 --set eamma_native_draw_log_at=72 --set eamma_native_perf=true
    --set eamma_native_perf_min_draws=100`: (= w2b). Its draw log has the crowd draws (VS 19010A0F...) with their `ib` and `vb fetch` lines.

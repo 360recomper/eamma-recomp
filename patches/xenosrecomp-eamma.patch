@@ -1,7 +1,7 @@
 diff --git a/XenosRecomp/main.cpp b/XenosRecomp/main.cpp
 index 8c51476..18c076f 100644
---- a/XenosRecomp/main.cpp	
-+++ b/XenosRecomp/main.cpp	
+--- a/XenosRecomp/main.cpp
++++ b/XenosRecomp/main.cpp
 @@ -174,8 +174,11 @@ int main(int argc, char** argv)
  
                  if ((shaderContainer->flags & 0xFFFFFF00) == 0x102A1100 &&
@@ -39,8 +39,8 @@ index 8c51476..18c076f 100644
                      auto path = std::filesystem::path(hlslDumpDir) /
 diff --git a/XenosRecomp/pch.h b/XenosRecomp/pch.h
 index 5b39977..9589e89 100644
---- a/XenosRecomp/pch.h	
-+++ b/XenosRecomp/pch.h	
+--- a/XenosRecomp/pch.h
++++ b/XenosRecomp/pch.h
 @@ -19,6 +19,7 @@
  #include <string>
  #include <unordered_map>
@@ -50,9 +50,9 @@ index 5b39977..9589e89 100644
  #include <xxhash.h>
  #include <zstd.h>
 diff --git a/XenosRecomp/shader_common.h b/XenosRecomp/shader_common.h
-index 6d8a497..d4deba4 100644
---- a/XenosRecomp/shader_common.h	
-+++ b/XenosRecomp/shader_common.h	
+index 6d8a497..30bd538 100644
+--- a/XenosRecomp/shader_common.h
++++ b/XenosRecomp/shader_common.h
 @@ -5,6 +5,8 @@
  #define SPEC_CONSTANT_ALPHA_TEST        (1 << 1)
  // SvR 2008: normals/tangents packed as D3DDECLTYPE_DHEN3N (x 10 bits, y 11, z 11, signed).
@@ -115,7 +115,22 @@ index 6d8a497..d4deba4 100644
  // Test Xenos boolean register N in the unified VS(0..127)/PS(128..255) file.
  #define BOOL_BIT(n) ((g_Booleans((n) / 32u) & (1u << ((n) & 31u))) != 0)
  #endif
-@@ -284,10 +301,33 @@ float4 tfetchCubeLod0(uint resourceDescriptorIndex, uint samplerDescriptorIndex,
+@@ -141,6 +158,14 @@ uint2 getTexture2DDimensions(Texture2D<float4> texture)
+     return dimensions;
+ }
+ 
++// EA MMA: a fetch with texel coordinates (tx_coord_denorm). The small bias keeps a whole-number coordinate
++// inside its texel after the divide (point sampling picks texel floor(coordinate)).
++float2 denormCoord2D(uint resourceDescriptorIndex, float2 texCoord)
++{
++    Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
++    return (texCoord + 1.0 / 512.0) / getTexture2DDimensions(texture);
++}
++
+ float4 tfetch2D(uint resourceDescriptorIndex, uint samplerDescriptorIndex, float2 texCoord, float2 offset)
+ {
+     Texture2D<float4> texture = g_Texture2DDescriptorHeap[resourceDescriptorIndex];
+@@ -284,10 +309,33 @@ float4 tfetchCubeLod0(uint resourceDescriptorIndex, uint samplerDescriptorIndex,
      return g_TextureCubeDescriptorHeap[resourceDescriptorIndex].SampleLevel(g_SamplerDescriptorHeap[samplerDescriptorIndex], cubeMapData.cubeMapDirections[texCoord.z], 0);
  }
  
@@ -150,10 +165,15 @@ index 6d8a497..d4deba4 100644
      {
          uint v = asuint(value.x);
 diff --git a/XenosRecomp/shader_recompiler.cpp b/XenosRecomp/shader_recompiler.cpp
-index c72574a..dcef496 100644
---- a/XenosRecomp/shader_recompiler.cpp	
-+++ b/XenosRecomp/shader_recompiler.cpp	
-@@ -408,15 +408,15 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
+index c72574a..ad9992c 100644
+--- a/XenosRecomp/shader_recompiler.cpp
++++ b/XenosRecomp/shader_recompiler.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ #include "shader_recompiler.h"
+ #include "shader_common.h"
+ 
+@@ -408,15 +409,15 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
      switch (findResult->second.usage)
      {
      case DeclUsage::Normal:
@@ -172,7 +192,7 @@ index c72574a..dcef496 100644
          print("tfetchR11G11B10(swapFloats(g_SwappedBinormals, ");
          break;
      case DeclUsage::BlendWeight:
-@@ -514,6 +514,21 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
+@@ -514,6 +515,21 @@ void ShaderRecompiler::recompile(const VertexFetchInstruction& instr, uint32_t a
  
  void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicubic)
  {
@@ -194,7 +214,7 @@ index c72574a..dcef496 100644
      if (instr.opcode != FetchOpcode::TextureFetch && instr.opcode != FetchOpcode::GetTextureWeights)
          return;
  
-@@ -639,6 +654,10 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
+@@ -639,6 +655,10 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
      {
          out += "Lod0";
      }
@@ -205,7 +225,24 @@ index c72574a..dcef496 100644
  
  #ifdef UNLEASHED_RECOMP
      if (bicubic)
-@@ -658,6 +677,10 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
+@@ -646,7 +666,16 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
+ #endif
+ 
+     print("({0}_Texture{1}DescriptorIndex, {0}_SamplerDescriptorIndex, ", constNamePtr, dimension);
++    // EA MMA: tx_coord_denorm = the coordinates are texels, not 0..1 (the crowd's vertex shader reads its pose
++    // matrices from a 147x8 texture at texel (bone * 3 + k, frame)). XENOS_RECOMP_NO_DENORM=1 = the old path.
++    static const bool noDenorm = std::getenv("XENOS_RECOMP_NO_DENORM") != nullptr;
++    const bool denorm = instr.texCoordDenorm && !noDenorm && instr.opcode == FetchOpcode::TextureFetch &&
++        instr.dimension == TextureDimension::Texture2D;
++    if (denorm)
++        print("denormCoord2D({}_Texture2DDescriptorIndex, ", constNamePtr);
+     printSrcRegister(componentCount);
++    if (denorm)
++        out += ")";
+ 
+     switch (instr.dimension)
+     {
+@@ -658,6 +687,10 @@ void ShaderRecompiler::recompile(const TextureFetchInstruction& instr, bool bicu
          break;
      }
  
@@ -216,7 +253,7 @@ index c72574a..dcef496 100644
      out += ").";
  
      printDstSwizzle(instr.dstSwizzle, true);
-@@ -2003,6 +2026,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2003,6 +2036,7 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
  
                  println("\tint4 i{} = int4({}, {}, {}, {});",
                      (definition->registerIndex - 8992) / 4 + i, x, y, z, w);
@@ -224,7 +261,7 @@ index c72574a..dcef496 100644
              }
              definitions += 2;
              definitions += definition->count;
-@@ -2084,6 +2108,12 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2084,6 +2118,12 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
  
      out += "\tint a0 = 0;\n";
      out += "\tint aL = 0;\n";
@@ -237,7 +274,7 @@ index c72574a..dcef496 100644
      out += "\tbool p0 = false;\n";
      out += "\tfloat ps = 0.0;\n";
      out += "\tfloat4 coIssue = 0.0;\n";
-@@ -2435,20 +2465,23 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2435,20 +2475,23 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                  break;
  
              case ControlFlowOpcode::LoopStart:
@@ -263,7 +300,7 @@ index c72574a..dcef496 100644
                  }
                  break;
  
-@@ -2461,8 +2494,9 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2461,8 +2504,9 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                  }
                  else
                  {
@@ -275,7 +312,7 @@ index c72574a..dcef496 100644
                      out += "\t\t\t{\n";
                      println("\t\t\t\tpc = {};", uint32_t(cfInstr.loopEnd.address));
                      out += "\t\t\t\tcontinue;\n";
-@@ -2644,6 +2678,8 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2644,6 +2688,8 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
                      {
                  #ifdef REBLUE_RECOMP
                          out += "\toPos.xy = oPos.xy * g_ScreenSpace.xy + g_ScreenSpace.zw * oPos.w;\n";
@@ -284,7 +321,7 @@ index c72574a..dcef496 100644
                  #endif
                          out += "\toPos.xy += g_HalfPixelOffset * oPos.w;\n";
                      }
-@@ -2704,6 +2740,16 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
+@@ -2704,6 +2750,16 @@ void ShaderRecompiler::recompile(const uint8_t* shaderData, const std::string_vi
          }
      }
  
@@ -303,8 +340,8 @@ index c72574a..dcef496 100644
          out += "\t}\n";
 diff --git a/XenosRecomp/shader_recompiler.h b/XenosRecomp/shader_recompiler.h
 index b332132..0380bb7 100644
---- a/XenosRecomp/shader_recompiler.h	
-+++ b/XenosRecomp/shader_recompiler.h	
+--- a/XenosRecomp/shader_recompiler.h
++++ b/XenosRecomp/shader_recompiler.h
 @@ -35,6 +35,10 @@ struct ShaderRecompiler : StringBuffer
      // Structured if/else emission: instruction indices where a "} else {" is
      // emitted (then-branch close is part of the event, not ifEndLabels).
