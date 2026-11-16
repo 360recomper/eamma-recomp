@@ -81,10 +81,12 @@ REXCVAR_DEFINE_INT32(eamma_native_off2, 0, "eamma",
                      "1 filling the half-pixel gap at the left/top of scaled colour resolves (the "
                      "first covered host column/row copied over the uncovered ones, NR-CE1), "
                      "2 the alpha-to-mask fallback (alpha test at 0.5 for draws with ALPHA_TO_MASK, WP6)");
-REXCVAR_DEFINE_INT32(eamma_native_list_split_us, 2000, "eamma",
+REXCVAR_DEFINE_INT32(eamma_native_list_split_us, 0, "eamma",
                      "Native renderer (NR-14c): the frame's command list goes to the GPU, with no "
                      "wait, at the first draw this many microseconds after it was opened (at most 8 "
-                     "times a frame), so a write-back's wait covers only what came since. 0 = off");
+                     "times a frame), so a write-back's wait covers only what came since. 0 = off "
+                     "(EA MMA's default: a part sent early is read before eamma_native_geometry_late_fix "
+                     "can refresh its vertex copies; UFC's value was 2000)");
 REXCVAR_DEFINE_INT32(eamma_native_guest_skip, 1, "eamma",
                      "Native renderer: game D3D work to leave out because only the null GPU would "
                      "read it (NR-P6; bit 1 on since NR-B3's A/B, 0 = the old path). Bits: 1 "

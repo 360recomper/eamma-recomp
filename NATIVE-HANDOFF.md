@@ -105,6 +105,12 @@ step you touch. The user wants work to continue step to step without asking for 
   in 600 frames", no cracks seen in 64 burst frames. Holes: a buffer copied twice in one frame keeps its earlier
   copy as taken; command-list chunks already sent by the list split (`eamma_native_list_split_us`) may have been
   read. Stills every 5-15 s cannot show this class of bug: use bursts.
+  **Second round (the user still saw it):** the cvar is now an int, default 2 = every copy of a buffer made in the
+  frame gets the final content (shadow / SSS / main passes agree), and `eamma_native_list_split_us` defaults to 0 so no
+  part of the frame is sent before the refresh. Run g3 (fight burst, 64 frames at 4 a second): 457-665 of 7-15 thousand
+  copies refreshed per 600 frames, no torn body seen at thumbnail size. User confirmation still pending. If it
+  persists: (a) copies made on the static-buffer path (first two changes, or over 4 MB) are not tracked, (b) resolve
+  write-backs still send the list mid-frame, (c) it may be a different bug: get a burst of the exact scene.
 
 ### In flight
 - Nothing queued on the laptop. The build in out/build has all of the above.

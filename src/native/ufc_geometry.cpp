@@ -52,12 +52,13 @@ REXCVAR_DEFINE_BOOL(eamma_native_geometry_every_draw, true, "eamma",
                     "draw. EA MMA rewrites the fighters' skinned buffers between draws of a frame "
                     "without an Unlock (A5: lighting patches, cracks); ~1 ms a frame on a fast CPU. "
                     "false = once a frame, plus every use for buffers changed in the last 60 frames");
-REXCVAR_DEFINE_BOOL(eamma_native_geometry_late_fix, true, "eamma",
-                    "Native renderer: at the end of a frame, compare each dynamic vertex/index copy made in it "
-                    "with guest memory again and refresh the ones that changed. The game's job threads are "
-                    "still writing the fighters' skinned buffers when the draw is issued (the console GPU reads "
-                    "them later), so a copy taken at the draw can be half old, half new: black cracks along "
-                    "mesh seams, limbs detaching for a frame. false = the old path (copy at the draw only)");
+REXCVAR_DEFINE_INT32(eamma_native_geometry_late_fix, 2, "eamma",
+                     "Native renderer: at the end of a frame, compare the dynamic vertex/index copies made in it "
+                     "with guest memory again and refresh the ones that changed. The game's job threads are "
+                     "still writing the fighters' skinned buffers when the draws are issued (the console GPU "
+                     "reads them later), so a copy taken at a draw can be half old, half new: black cracks along "
+                     "mesh seams, limbs detaching, passes of one body disagreeing (black flicker). 0 = off, "
+                     "1 = the last copy of each buffer only, 2 = every copy gets the buffer's final content");
 REXCVAR_DEFINE_BOOL(eamma_native_check_geometry, false, "eamma",
                     "Native renderer dev aid (NR-P4): hash each buffer the trusted path would not "
                     "look at, and log what it would have missed; also logs every buffer that "
@@ -575,40 +576,58 @@ void SvrDrawLogIndices(u32 device_guest, u32 start_index) {
           wide ? "INDEX32" : "INDEX16", (common >> 29) & 3u, u32(ib->FetchHi), words);
 }
 
-// Called once a frame before the frame's command list is closed and sent (present.cpp). The last copy made of
-// each dynamic buffer this frame is compared with guest memory again; one that changed since (a job thread
-// finished writing it after the draw) is copied again into the same upload bytes, which the GPU has not read yet.
-// An earlier copy of a buffer that was copied twice in the frame is left alone: its content is gone.
+// Called once a frame before the frame's command list is closed and sent (present.cpp). Every copy made of a
+// dynamic buffer this frame is compared with guest memory again; one that differs (a job thread finished writing
+// the buffer after the draw) is copied again into the same upload bytes. All copies of a buffer get its final
+// content, so the shadow, SSS and main passes of a fighter draw the same vertices (a buffer holds one mesh pose a
+// frame). eamma_native_geometry_late_fix: 0 = off (copy at the draw only), 1 = only the last copy of each buffer,
+// 2 = every copy (default). Needs the frame's list unsent: see eamma_native_list_split_us.
 void SvrGeometryLateFixup() {
-  static const bool on = REXCVAR_GET(eamma_native_geometry_late_fix);
+  static const int mode = REXCVAR_GET(eamma_native_geometry_late_fix);
   std::lock_guard lock(g_mutex);
-  if (!on || g_late.empty()) {
+  if (mode <= 0 || g_late.empty()) {
     g_late.clear();
     return;
   }
   SvrZone zone(SvrZoneId::kGeomHash);
   static u64 s_frames = 0, s_fixed = 0, s_fixed_bytes = 0, s_checked = 0;
   const u64 epoch = UploadEpoch();
-  std::vector<u64> done;
+  struct Final {
+    u64 key, hash;
+  };
+  std::vector<Final> done;
   for (size_t i = g_late.size(); i-- > 0;) {
     const LateCopy &c = g_late[i];
-    const u64 key = Key(c.address, c.size);
-    if (c.epoch != epoch || std::find(done.begin(), done.end(), key) != done.end())
+    if (c.epoch != epoch)
       continue;
-    done.push_back(key);
+    const u64 key = Key(c.address, c.size);
     const u8 *src = GpuMemory(c.address, c.size);
     if (!src)
       continue;
+    u64 hash = 0;
+    bool last = true;
+    for (const Final &f : done) {
+      if (f.key == key) {
+        hash = f.hash;
+        last = false;
+        break;
+      }
+    }
+    if (last) {
+      hash = XXH3_64bits(src, c.size);
+      done.push_back({key, hash});
+      const auto it = g_mirrors.find(key);
+      if (it != g_mirrors.end() && it->second.hash == c.hash)
+        it->second.hash = hash;
+    } else if (mode < 2) {
+      continue;
+    }
     ++s_checked;
-    const u64 hash = XXH3_64bits(src, c.size);
     if (hash == c.hash)
       continue;
     CopyAsGpuReads(c.memory, src, c.size, c.endian);
     ++s_fixed;
     s_fixed_bytes += c.size;
-    const auto it = g_mirrors.find(key);
-    if (it != g_mirrors.end() && it->second.hash == c.hash)
-      it->second.hash = hash;
   }
   g_late.clear();
   if (++s_frames % 600 == 0) {
