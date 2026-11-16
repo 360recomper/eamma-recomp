@@ -88,6 +88,19 @@ step you touch. The user wants work to continue step to step without asking for 
 - Unattended tools pass `--eamma_native_error_box=false` (eamma_selftest.py). Frozen builds older than today do not
   know that cvar.
 
+- **Laptop lap2 jobs (1x, build of commit 363a363 + unlock hook), all exit 0, empty stderr, no stretch / not-done / miss:**
+  `eamma-lap2` (boot -> fight -> results: crowd present, fight 60 fps in 16 of 35 fight seconds, mean 54);
+  `eamma-lap2-down1` = MMA 101 tutorial in a ring venue (lead: in the submission mini-game emulated is much darker
+  with a vignette; shots are not at the same moment, pair them by content before calling it a defect);
+  `eamma-lap2-down2` = Career -> create-a-fighter screens, native matches emulated; `eamma-lap2-down3` = Xbox Live
+  error dialog, same on both. Scripts: `tools/selftest_scripts/laptop/menu_down{1,2,3}.txt`. Coverage over the four
+  native runs: 84 of 240 pixel shaders.
+- **OPEN, reported by the user in a 2x play session (`play-native.bat`): fighter bodies twitch and split at the seams
+  in the main menu and in fights.** Not visible in stills. Suspects in order: the pacing change (no host limiter, no
+  XMP sleep: the render thread may read skinned vertex buffers while job threads write them, the A5 symptom), the
+  2x path, the texel-coordinate fetch change, the coverage ledger. The user was given two A/B launches (old pacing:
+  `--eamma_native_fps_limit=60 --eamma_xmp_status_every=1`; 1x: `--eamma_native_scale=1`); answer pending.
+
 ### In flight
 - Nothing queued on the laptop. The build in out/build has all of the above.
 
