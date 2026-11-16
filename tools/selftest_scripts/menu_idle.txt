@@ -1,0 +1,8 @@
+# Boot to the main menu and stay there (no presses after 17 s).
+pad 0
+6 0 0.15 START
++1.5 0 0.15 A
+10 0 0.15 START
++1.5 0 0.15 A
+14 0 0.15 A
+17 0 0.15 A

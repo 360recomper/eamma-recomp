@@ -95,11 +95,16 @@ step you touch. The user wants work to continue step to step without asking for 
   `eamma-lap2-down2` = Career -> create-a-fighter screens, native matches emulated; `eamma-lap2-down3` = Xbox Live
   error dialog, same on both. Scripts: `tools/selftest_scripts/laptop/menu_down{1,2,3}.txt`. Coverage over the four
   native runs: 84 of 240 pixel shaders.
-- **OPEN, reported by the user in a 2x play session (`play-native.bat`): fighter bodies twitch and split at the seams
-  in the main menu and in fights.** Not visible in stills. Suspects in order: the pacing change (no host limiter, no
-  XMP sleep: the render thread may read skinned vertex buffers while job threads write them, the A5 symptom), the
-  2x path, the texel-coordinate fetch change, the coverage ledger. The user was given two A/B launches (old pacing:
-  `--eamma_native_fps_limit=60 --eamma_xmp_status_every=1`; 1x: `--eamma_native_scale=1`); answer pending.
+- **Twitching / seam cracks reported by the user (bodies splitting at seams, black flicker, referee head detaching):
+  cause found, fix built, user confirmation pending.** Not from today's changes (old pacing and 1x both showed it).
+  A burst of 5 shots a second on the main menu (run g1, `tools/selftest_scripts/menu_idle.txt`) caught black cracks
+  on Fedor in 2 of 24 frames: the A5 symptom. The game's job threads are still writing the skinned buffers when
+  the draw is issued, so the copy taken at the draw can be torn. Fix: `SvrGeometryLateFixup` (ufc_geometry.cpp,
+  called from Present before the list is closed) re-compares each dynamic ring copy at frame end and refreshes it
+  in place; cvar `eamma_native_geometry_late_fix` (false = old path). Run g2: "312 of 5511 dynamic copies refreshed
+  in 600 frames", no cracks seen in 64 burst frames. Holes: a buffer copied twice in one frame keeps its earlier
+  copy as taken; command-list chunks already sent by the list split (`eamma_native_list_split_us`) may have been
+  read. Stills every 5-15 s cannot show this class of bug: use bursts.
 
 ### In flight
 - Nothing queued on the laptop. The build in out/build has all of the above.

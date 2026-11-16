@@ -52,6 +52,12 @@ REXCVAR_DEFINE_BOOL(eamma_native_geometry_every_draw, true, "eamma",
                     "draw. EA MMA rewrites the fighters' skinned buffers between draws of a frame "
                     "without an Unlock (A5: lighting patches, cracks); ~1 ms a frame on a fast CPU. "
                     "false = once a frame, plus every use for buffers changed in the last 60 frames");
+REXCVAR_DEFINE_BOOL(eamma_native_geometry_late_fix, true, "eamma",
+                    "Native renderer: at the end of a frame, compare each dynamic vertex/index copy made in it "
+                    "with guest memory again and refresh the ones that changed. The game's job threads are "
+                    "still writing the fighters' skinned buffers when the draw is issued (the console GPU reads "
+                    "them later), so a copy taken at the draw can be half old, half new: black cracks along "
+                    "mesh seams, limbs detaching for a frame. false = the old path (copy at the draw only)");
 REXCVAR_DEFINE_BOOL(eamma_native_check_geometry, false, "eamma",
                     "Native renderer dev aid (NR-P4): hash each buffer the trusted path would not "
                     "look at, and log what it would have missed; also logs every buffer that "
@@ -103,6 +109,15 @@ u32 g_largest = 0;                // largest size in g_mirrors: bounds SvrInvali
 u64 g_last_sweep = 0;
 
 u64 Key(u32 address, u32 size) { return (u64(address) << 32) | size; }
+
+// eamma_native_geometry_late_fix: this frame's ring copies, in the order they were made. Under g_mutex.
+struct LateCopy {
+  u32 address, size, endian;
+  u8 *memory;  // the upload ring bytes the recorded draws will read
+  u64 hash;    // of the guest bytes the copy was made from
+  u64 epoch;
+};
+std::vector<LateCopy> g_late;
 
 // The path before NR-P4 (spot checks every use, no front table) unless eamma_native_geom_trust is on;
 // eamma_native_off bit 32 wins over the cvar.
@@ -387,6 +402,8 @@ bool ResolveLocked(u32 address, u32 size, u32 endian, bool index, u64 frame,
       CopyAsGpuReads(alloc.memory, src, size, endian);
       SvrPerfCount(SvrCount::kGeomRingBytes, size);
       fresh_ring = alloc.ref;
+      if (g_late.size() < 4096)
+        g_late.push_back({address, size, endian, alloc.memory, hash, UploadEpoch()});
     }
   }
   if (!fresh_ring.ref) {
@@ -556,6 +573,49 @@ void SvrDrawLogIndices(u32 device_guest, u32 start_index) {
   }
   BD_INFO("[drawlog]   ib 0x{:08X} common {:08X} {} endian {} bytes {} memory{}", u32(device->indexBuffer), common,
           wide ? "INDEX32" : "INDEX16", (common >> 29) & 3u, u32(ib->FetchHi), words);
+}
+
+// Called once a frame before the frame's command list is closed and sent (present.cpp). The last copy made of
+// each dynamic buffer this frame is compared with guest memory again; one that changed since (a job thread
+// finished writing it after the draw) is copied again into the same upload bytes, which the GPU has not read yet.
+// An earlier copy of a buffer that was copied twice in the frame is left alone: its content is gone.
+void SvrGeometryLateFixup() {
+  static const bool on = REXCVAR_GET(eamma_native_geometry_late_fix);
+  std::lock_guard lock(g_mutex);
+  if (!on || g_late.empty()) {
+    g_late.clear();
+    return;
+  }
+  SvrZone zone(SvrZoneId::kGeomHash);
+  static u64 s_frames = 0, s_fixed = 0, s_fixed_bytes = 0, s_checked = 0;
+  const u64 epoch = UploadEpoch();
+  std::vector<u64> done;
+  for (size_t i = g_late.size(); i-- > 0;) {
+    const LateCopy &c = g_late[i];
+    const u64 key = Key(c.address, c.size);
+    if (c.epoch != epoch || std::find(done.begin(), done.end(), key) != done.end())
+      continue;
+    done.push_back(key);
+    const u8 *src = GpuMemory(c.address, c.size);
+    if (!src)
+      continue;
+    ++s_checked;
+    const u64 hash = XXH3_64bits(src, c.size);
+    if (hash == c.hash)
+      continue;
+    CopyAsGpuReads(c.memory, src, c.size, c.endian);
+    ++s_fixed;
+    s_fixed_bytes += c.size;
+    const auto it = g_mirrors.find(key);
+    if (it != g_mirrors.end() && it->second.hash == c.hash)
+      it->second.hash = hash;
+  }
+  g_late.clear();
+  if (++s_frames % 600 == 0) {
+    BD_INFO("geometry late fix: {} of {} dynamic copies refreshed at frame end in the last 600 frames ({} KB)",
+            s_fixed, s_checked, s_fixed_bytes / 1024);
+    s_fixed = s_checked = s_fixed_bytes = 0;
+  }
 }
 
 void SvrDrawLogStream0(u32 device_guest) {

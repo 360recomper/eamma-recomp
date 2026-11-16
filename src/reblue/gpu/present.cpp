@@ -12,6 +12,7 @@
 #if defined(SVR_NATIVE_RENDERER)
 #include "ufc_command_stream.h"
 #include "ufc_frame_diag.h"
+#include "ufc_geometry.h"
 #endif
 #include "gpu/frame.h"
 
@@ -477,6 +478,7 @@ void Video::Present(GuestTexture *frontBuffer) {
   const u32 cur = s.frame.load(std::memory_order_relaxed);
   SvrGpuTimeEnd(cur);
 #if defined(SVR_NATIVE_RENDERER)
+  SvrGeometryLateFixup();  // before the GPU can read this frame's dynamic vertex copies
   SvrRecordingList(cur, s.command_lists[cur].get())->end();  // waits for threaded recording
 #else
   s.command_lists[cur]->end();
