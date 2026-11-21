@@ -31,7 +31,8 @@ step you touch. The user wants work to continue step to step without asking for 
 - Laptop farm (WPF, 2026-11-15): `py -I tools/eamma_selftest.py <run> --script <script> [--renderer native|emulated]
   [--set k=v]` = UFC-style self-test (runs in E:\ClaudeGame\EAMMA-tests\selftest\<run>, sheet.jpg). `py -I tools/eamma_farm_job.py
   <tag> [--queue]` freezes the build to TestFarmuilds\eamma-<tag> and writes a native + emulated job pair (default
-  jobs\hold\eamma-staged). Laptop setup: E:\ClaudeGame\TestFarm\EAMMA-JOBS.md. Results land in TestFarmesults\<run>.
+  jobs\hold\eamma-staged). Laptop setup: E:\ClaudeGame\TestFarm\EAMMA-JOBS.md. Results land in TestFarm
+esults\<run>.
   Laptop = 1x only; scaled and perf runs stay on Chi.
 
 ## Diagnostics that work
@@ -96,7 +97,7 @@ step you touch. The user wants work to continue step to step without asking for 
   error dialog, same on both. Scripts: `tools/selftest_scripts/laptop/menu_down{1,2,3}.txt`. Coverage over the four
   native runs: 84 of 240 pixel shaders.
 - **Twitching / seam cracks reported by the user (bodies splitting at seams, black flicker, referee head detaching):
-  cause found, fix built, user confirmation pending.** Not from today's changes (old pacing and 1x both showed it).
+  **fixed** (user play test 2026-11-21 on 2afa7ce: "twitching seems gone").** Not from today's changes (old pacing and 1x both showed it).
   A burst of 5 shots a second on the main menu (run g1, `tools/selftest_scripts/menu_idle.txt`) caught black cracks
   on Fedor in 2 of 24 frames: the A5 symptom. The game's job threads are still writing the skinned buffers when
   the draw is issued, so the copy taken at the draw can be torn. Fix: `SvrGeometryLateFixup` (ufc_geometry.cpp,
