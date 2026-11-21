@@ -1,0 +1,20 @@
+# Boot like fight_burst.txt (START then A every 4 s) up to 38 s, then no input: let the introductions play (A10/A11 close-ups).
+pad 0
+6 0 0.15 START
++1.5 0 0.15 A
+10 0 0.15 START
++1.5 0 0.15 A
+14 0 0.15 START
++1.5 0 0.15 A
+18 0 0.15 START
++1.5 0 0.15 A
+22 0 0.15 START
++1.5 0 0.15 A
+26 0 0.15 START
++1.5 0 0.15 A
+30 0 0.15 START
++1.5 0 0.15 A
+34 0 0.15 START
++1.5 0 0.15 A
+38 0 0.15 START
++1.5 0 0.15 A

@@ -226,6 +226,43 @@ void SvrDrawLogDraw(u32 device_guest, const char *name, u32 primitive, bool inde
       }
     }
   }
+  // SVR_LOG_EYE=1 (env, A10 white eyes): for eye draws (PLAYER_EYE PS B98DE7C0, PLAYER_EYE_GP PS
+  // A1BDE5DC), every 30 frames: VS c0..c3 (occluder pos/scale, isLeftEye, eyeUVOffset), PS c11..c16
+  // and the bound textures.
+  {
+    static const bool eye_watch = std::getenv("SVR_LOG_EYE") != nullptr;
+    const u64 ps_hash = eye_watch ? ShaderHash(state().pixel_shader) : 0;
+    if (ps_hash == 0xB98DE7C0BD7D7A7Eull || ps_hash == 0xA1BDE5DC78DB8D85ull) {
+      static u64 s_last = 0;
+      static u32 s_burst = 0;
+      const u64 frame = SvrFrameIndex();
+      if (frame >= s_last + 30) {
+        s_last = frame;
+        s_burst = 0;
+      }
+      if (s_burst < 4) {
+        ++s_burst;
+        if (const auto *dev = bd::mem::try_at<const D3DDevice>(device_guest)) {
+          std::string list;
+          for (u32 c = 0; c <= 3; ++c)
+            list += fmt::format(" vs-c{}={:.5g},{:.5g},{:.5g},{:.5g}", c, float(dev->vsFloatConstants[c][0]),
+                                float(dev->vsFloatConstants[c][1]), float(dev->vsFloatConstants[c][2]),
+                                float(dev->vsFloatConstants[c][3]));
+          for (u32 c = 11; c <= 16; ++c)
+            list += fmt::format(" ps-c{}={:.5g},{:.5g},{:.5g},{:.5g}", c, float(dev->psFloatConstants[c][0]),
+                                float(dev->psFloatConstants[c][1]), float(dev->psFloatConstants[c][2]),
+                                float(dev->psFloatConstants[c][3]));
+          auto &st = state();
+          for (u32 slot = 0; slot < kTextureSlots; ++slot) {
+            const u32 va = bd::mem::load<u32>(device_guest + kBoundTextureTable + slot * 4u);
+            if (va && st.textures[slot])
+              list += fmt::format(" t{}=0x{:08X}[{}]", slot, va, Host(st.textures[slot]));
+          }
+          BD_INFO("[eye] frame {} VS {:016X} PS {:016X}{}", frame, ShaderHash(st.vertex_shader), ps_hash, list);
+        }
+      }
+    }
+  }
   if (!SvrDrawLogActive())
     return;
   static u32 s_index = 0;

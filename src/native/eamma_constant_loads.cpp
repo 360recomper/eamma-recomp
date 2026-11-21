@@ -40,6 +40,11 @@ std::vector<ConstantLoad> g_pending;
 // constant upload on the drawing thread right after EammaApplyConstantLoads (same thread).
 unsigned int g_source[2][256];
 unsigned int g_source_gen[2] = {1, 1};
+// The guest bytes the last pointer load copied into each register (A10): the effect code (FXL) also writes
+// registers straight into the device block, which no hook sees. A register whose device bytes no longer match
+// was written that way, so its pointer source is stale (the frame-end refresh copied old matrices over the eye
+// shader's isLeftEye / eyeUVOffset, c2/c3, and the iris left the eyeball).
+unsigned char g_applied[2][256][16];
 
 // Records pile up only when no native draw consumes them (another device, a stretch without
 // draws). The newest are the ones the next draw needs, so a full list drops its oldest quarter.
@@ -82,6 +87,8 @@ void EammaApplyConstantLoads(u32 device_guest) {
       const unsigned int va = l.pointer ? l.data + 16u * i : 0u;
       moved |= g_source[l.type][l.start + i] != va;
       g_source[l.type][l.start + i] = va;
+      if (va)
+        std::memcpy(g_applied[l.type][l.start + i], reinterpret_cast<const u8 *>(dst) + 16u * i, 16u);  // what the device got
     }
     if (moved)
       ++g_source_gen[l.type];
@@ -95,6 +102,17 @@ const unsigned int *EammaConstantSources(int stage, unsigned int *generation) {
   }
   *generation = g_source_gen[stage];
   return g_source[stage];
+}
+
+// The upload, before it treats a register as pointer-loaded: false (and the source forgotten) when the device
+// bytes it uploads are not the ones the pointer load copied there, i.e. something else wrote the register since.
+bool EammaConstantSourceStillValid(int stage, unsigned int reg, const unsigned char *device_bytes) {
+  if (stage < 0 || stage > 1 || reg >= 256 || !g_source[stage][reg])
+    return false;
+  if (std::memcmp(g_applied[stage][reg], device_bytes, 16u) == 0)
+    return true;
+  g_source[stage][reg] = 0;
+  return false;
 }
 
 #if defined(D3DDevice_GpuLoadShaderConstantF4Pointer)

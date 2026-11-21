@@ -138,6 +138,15 @@ esults\<run>.
   (4) both refreshes also run in `SubmitOpenListLocked` (mid-frame submits by resolve write-back). Run g9: fight 60 fps
   every second. Gemini's lock-race point was wrong (geometry copies run under state().mutex, draw.cpp:217). Its
   non-timing leads (depth bias, keep-1x seams, CPU-written texture staleness with `eamma_native_g4=log`) are untested.
+  **Sixth round (2026-11-21, after the user confirmed the twitch gone and reported white eyes, A10):** round 3's refresh
+  corrupted registers the effect code writes straight into the device block (no hook sees those writes): such a
+  register kept an older pointer load's source, and the frame-end refresh copied that stale memory over it (the eye
+  shader's isLeftEye/eyeUVOffset c2/c3 -> iris UV off the eyeball). `g_applied` (eamma_constant_loads.cpp) keeps the
+  bytes each pointer load put into the device block; `EammaConstantSourceStillValid` drops the source of a register that
+  no longer holds them. Fight: 29-33k genuine late refreshes per 600 frames (g11; g9 counted ~42k including the bogus
+  ones). Tools: `tools/selftest_scripts/intro_watch.txt` (boot, then no input: close-ups at 73-109 s native, ~45 s
+  later emulated), env `SVR_LOG_EYE=1` (eye draws' constants and textures), `XENOS_RECOMP_HLSL_OVERRIDE` worked for
+  shader A/B (cache rebuild 5 s; restore the normal cache after).
 
 ### In flight
 - Nothing queued on the laptop. The build in out/build has all of the above.

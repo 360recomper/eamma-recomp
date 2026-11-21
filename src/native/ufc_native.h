@@ -16,3 +16,4 @@ void EammaApplyConstantLoads(unsigned int device_guest);
 // GpuLoadShaderConstantF4Pointer (0 = another source); *generation changes when any entry does.
 // The upload uses it to refresh pointer-loaded registers at frame end (eamma_native_constant_late_fix).
 const unsigned int *EammaConstantSources(int stage, unsigned int *generation);
+bool EammaConstantSourceStillValid(int stage, unsigned int reg, const unsigned char *device_bytes);

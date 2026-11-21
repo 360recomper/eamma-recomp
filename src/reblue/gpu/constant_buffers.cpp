@@ -458,12 +458,15 @@ void NoteLateConstants(int stage, u8 *alloc_memory, const u8 *uploaded, const Gu
   for (u32 r = 0; r < use.rangeCount; ++r) {
     const u32 first = use.ranges[r].first, end = first + use.ranges[r].count;
     for (u32 i = first; i < end;) {
-      if (!src[i]) {
+      // A10: a register written since its pointer load (effect code writes the device block directly)
+      // is not pointer-loaded any more; refreshing it from the old source corrupted it.
+      if (!src[i] || !::EammaConstantSourceStillValid(stage, i, uploaded + i * 16u)) {
         ++i;
         continue;
       }
       u32 n = 1;
-      while (i + n < end && src[i + n] == src[i] + 16u * n)
+      while (i + n < end && src[i + n] == src[i] + 16u * n &&
+             ::EammaConstantSourceStillValid(stage, i + n, uploaded + (i + n) * 16u))
         ++n;
       const u32 raw_off = u32(g_late_const_raw.size());
       g_late_const_raw.insert(g_late_const_raw.end(), uploaded + i * 16u, uploaded + (i + n) * 16u);
