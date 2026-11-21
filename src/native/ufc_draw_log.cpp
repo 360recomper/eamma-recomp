@@ -357,6 +357,13 @@ void SvrDrawLogDraw(u32 device_guest, const char *name, u32 primitive, bool inde
             float(dev->psFloatConstants[34][0]));
   else if (vs_id == 0xDE0484A4u)
     BD_INFO("[drawlog]   shadow-mat{}", vs_regs(137, 8));
+  // EA MMA intro lights (LYNXGLARE VS 1CFB2126, LYNXLIGHTCONE VS DC741F49): particle constants c0..c32,
+  // the colour ramp c200..c203, the bools, and the PS's c0/c1 (cone falloff).
+  else if (vs_id == 0x1CFB2126u || vs_id == 0xDC741F49u)
+    BD_INFO("[drawlog]   lynx{}{} bools vs {:08X} {:08X} ps {:08X} {:08X} ps-c0 {:.5g} ps-c1 {:.5g}", vs_regs(0, 33),
+            vs_regs(200, 4), u32(dev->vsBoolConstants[0]), u32(dev->vsBoolConstants[1]),
+            u32(dev->psBoolConstants[0]), u32(dev->psBoolConstants[1]), float(dev->psFloatConstants[0][0]),
+            float(dev->psFloatConstants[1][0]));
   // NR-8b-2m: flare sprites, one draw per channel; the vertices carry the channel, c0 the level.
   if (vs_id == 0xD78630E3u) {
     SvrDrawLogStream0(device_guest);
