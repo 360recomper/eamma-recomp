@@ -129,6 +129,14 @@ step you touch. The user wants work to continue step to step without asking for 
   jobs finish before Present), and the new per-600-frame line "geometry untracked copies of rewritten buffers" is 0 in
   the fight (one idle case per minute). Known holes left: a mesh idle > 60 frames whose first use in a frame comes before
   the job writes it (one stale frame when it starts moving, e.g. the referee at the introductions); constants were not probed.
+  **Fifth round (Gemini 4 Neon review, HANDOFF-gemini-a9.md):** (1) `NoteLateConstants` snapshotted live guest memory
+  instead of the uploaded bytes, so a matrix finished between the copy and the snapshot looked fresh: now snapshots
+  `StageConstantCache::raw` (run g8: 49-60k late constant refreshes per 600 fight frames, was ~20k). (2) the frame-end
+  refresh never renewed a buffer's tracking when only it saw the change: it now sets `rewritten_frame`. (3) tracking
+  window 600 frames (`kLateTrackFrames`), first content of a buffer also takes a tracked ring copy (new meshes, referee).
+  (4) both refreshes also run in `SubmitOpenListLocked` (mid-frame submits by resolve write-back). Run g9: fight 60 fps
+  every second. Gemini's lock-race point was wrong (geometry copies run under state().mutex, draw.cpp:217). Its
+  non-timing leads (depth bias, keep-1x seams, CPU-written texture staleness with `eamma_native_g4=log`) are untested.
 
 ### In flight
 - Nothing queued on the laptop. The build in out/build has all of the above.

@@ -445,7 +445,9 @@ std::mutex g_late_const_mutex;
 std::vector<LateConstRun> g_late_const;
 std::vector<u8> g_late_const_raw;
 
-void NoteLateConstants(int stage, u8 *alloc_memory, const GuestConstantUse &use, u64 epoch) {
+// `uploaded` = the device-block bytes that went into the upload (StageConstantCache::raw), not live guest memory: a
+// job that finished writing after EammaApplyConstantLoads would otherwise look already refreshed (Gemini review).
+void NoteLateConstants(int stage, u8 *alloc_memory, const u8 *uploaded, const GuestConstantUse &use, u64 epoch) {
   unsigned int gen = 0;
   const unsigned int *src = ::EammaConstantSources(stage, &gen);
   if (!src)
@@ -463,12 +465,9 @@ void NoteLateConstants(int stage, u8 *alloc_memory, const GuestConstantUse &use,
       u32 n = 1;
       while (i + n < end && src[i + n] == src[i] + 16u * n)
         ++n;
-      const auto *guest = bd::mem::at<const u8>(src[i]);
-      if (guest) {
-        const u32 raw_off = u32(g_late_const_raw.size());
-        g_late_const_raw.insert(g_late_const_raw.end(), guest, guest + n * 16u);
-        g_late_const.push_back({alloc_memory + i * 16u, src[i], n, raw_off, epoch});
-      }
+      const u32 raw_off = u32(g_late_const_raw.size());
+      g_late_const_raw.insert(g_late_const_raw.end(), uploaded + i * 16u, uploaded + (i + n) * 16u);
+      g_late_const.push_back({alloc_memory + i * 16u, src[i], n, raw_off, epoch});
       i += n;
     }
   }
@@ -533,7 +532,7 @@ ConstantAllocation UploadStageConstants(UploadState &s, StageConstantCache &cach
   cache.valid = true;
   cache.sourceGen = source_gen;
   if (late_fix)
-    NoteLateConstants(stage, alloc.memory, use, s.epoch);
+    NoteLateConstants(stage, alloc.memory, cache.raw, use, s.epoch);
   SvrPerfCount(SvrCount::kCbBlocks, 1);
   SvrPerfCount(SvrCount::kCbRegisters, registers);
   return alloc;

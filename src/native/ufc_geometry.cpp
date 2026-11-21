@@ -93,6 +93,9 @@ constexpr u32 kMaxRingBytes = 4u << 20;
 constexpr u64 kEvictAfterFrames = 600;
 // A buffer whose content changed this recently is compared at every use, not once a frame (A5).
 constexpr u64 kVolatileFrames = 60;
+// A buffer rewritten this recently keeps taking tracked ring copies (eamma_native_geometry_late_fix): a resting
+// fighter or referee that starts moving again would otherwise draw one frame from a settled, untracked copy.
+constexpr u64 kLateTrackFrames = 600;
 
 struct Mirror {
   u32 endian = 0;  // xenos::Endian the GPU applies reading this range
@@ -397,8 +400,11 @@ bool ResolveLocked(u32 address, u32 size, u32 endian, bool index, u64 frame,
   // The job threads write it after the draws are issued, so its first use in a frame often still finds
   // last frame's content (same hash): that used to settle into an untracked host buffer, and the next
   // change counted as the first (changes < kDynamicAfterChanges, another untracked host buffer).
-  const bool late_tracked = REXCVAR_GET(eamma_native_geometry_late_fix) > 0 && m.rewritten_frame != 0 &&
-                            frame <= m.rewritten_frame + kVolatileFrames && size <= kMaxRingBytes;
+  // First content too: a new mesh (a fighter or the referee appearing) is often drawn once before its job has
+  // written it; a ring copy costs one extra copy for a static mesh, which settles the next frame.
+  const bool late_on = REXCVAR_GET(eamma_native_geometry_late_fix) > 0 && size <= kMaxRingBytes;
+  const bool late_tracked = late_on && (!m.has_content || (m.rewritten_frame != 0 &&
+                                                           frame <= m.rewritten_frame + kLateTrackFrames));
   if (same_kind && hash == m.hash) {
     m.checked_frame = frame;
     if (m.buffer && !late_tracked) {
@@ -646,8 +652,12 @@ void SvrGeometryLateFixup() {
       hash = XXH3_64bits(src, c.size);
       done.push_back({key, hash});
       const auto it = g_mirrors.find(key);
-      if (it != g_mirrors.end() && it->second.hash == c.hash)
+      if (it != g_mirrors.end() && it->second.hash == c.hash) {
         it->second.hash = hash;
+        // A buffer whose job always finishes after its draws only ever changes here: keep it tracked.
+        if (hash != c.hash)
+          it->second.rewritten_frame = it->second.used_frame;
+      }
     } else if (mode < 2) {
       continue;
     }
