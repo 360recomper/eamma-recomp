@@ -99,6 +99,7 @@ struct Mirror {
   u64 checked_frame = 0;  // frame the copy was last compared in; 0 = compare at the next use
   u64 used_frame = 0;
   u64 changed_frame = 0;  // frame a comparison last found new content (or the first content)
+  u64 rewritten_frame = 0;  // frame a comparison last found content different from the copy's (not the first)
   std::unique_ptr<plume::RenderBuffer> buffer;  // static content
   plume::RenderBufferReference ring{};          // dynamic content, bindable while ring_epoch is current
   u64 ring_epoch = 0;
@@ -381,9 +382,17 @@ bool ResolveLocked(u32 address, u32 size, u32 endian, bool index, u64 frame,
   m.stable = (same_kind && hash == m.hash) ? m.stable + 1 : 0;
   if (!(same_kind && hash == m.hash))
     m.changed_frame = frame;
+  if (same_kind && hash != m.hash)
+    m.rewritten_frame = frame;
+  // A9 round 4: a buffer the game rewrote recently always gets a ring copy the frame-end refresh tracks.
+  // The job threads write it after the draws are issued, so its first use in a frame often still finds
+  // last frame's content (same hash): that used to settle into an untracked host buffer, and the next
+  // change counted as the first (changes < kDynamicAfterChanges, another untracked host buffer).
+  const bool late_tracked = REXCVAR_GET(eamma_native_geometry_late_fix) > 0 && m.rewritten_frame != 0 &&
+                            frame <= m.rewritten_frame + kVolatileFrames && size <= kMaxRingBytes;
   if (same_kind && hash == m.hash) {
     m.checked_frame = frame;
-    if (m.buffer) {
+    if (m.buffer && !late_tracked) {
       out = m.buffer.get();
       return true;
     }
@@ -397,7 +406,7 @@ bool ResolveLocked(u32 address, u32 size, u32 endian, bool index, u64 frame,
   const u32 changes = (same_kind && hash != m.hash) ? m.changes + 1 : 0;
   plume::RenderBufferReference fresh_ring{};
   std::unique_ptr<plume::RenderBuffer> fresh;
-  if (changes >= kDynamicAfterChanges && size <= kMaxRingBytes) {
+  if ((changes >= kDynamicAfterChanges || late_tracked) && size <= kMaxRingBytes) {
     const ConstantAllocation alloc = AllocateUploadBytes(size, 256);
     if (alloc.memory) {
       CopyAsGpuReads(alloc.memory, src, size, endian);

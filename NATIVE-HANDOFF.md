@@ -118,6 +118,11 @@ step you touch. The user wants work to continue step to step without asking for 
   Present after the geometry fix) re-reads them and refreshes the upload; cvar `eamma_native_constant_late_fix` (true).
   Burst frames look normal; stills can't show a twitch, user play test pending. Unknown: whether the refreshed content is
   frame N's final matrices or frame N+1's written early (if the game single-buffers them).
+  **Fourth round (same day, user still saw black seam lines / parts separating / referee head):** hole in the vertex
+  path: a late-written buffer's first use in a frame often still matched last frame's hash, so it settled into an
+  untracked host buffer, and the next change counted as the first (changes < 2, untracked again). Now any buffer
+  rewritten in the last 60 frames always takes a tracked ring copy (`late_tracked`, ufc_geometry.cpp). Run g5: geometry
+  late fix 2205-4864 refreshed per 600 frames (g4: 814), fight 48.8 presents/s, burst frames clean. User play test pending.
 
 ### In flight
 - Nothing queued on the laptop. The build in out/build has all of the above.
