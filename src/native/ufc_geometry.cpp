@@ -15,6 +15,8 @@
 #include "ufc_geometry.h"
 
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
@@ -59,6 +61,10 @@ REXCVAR_DEFINE_INT32(eamma_native_geometry_late_fix, 2, "eamma",
                      "reads them later), so a copy taken at a draw can be half old, half new: black cracks along "
                      "mesh seams, limbs detaching, passes of one body disagreeing (black flicker). 0 = off, "
                      "1 = the last copy of each buffer only, 2 = every copy gets the buffer's final content");
+REXCVAR_DEFINE_INT32(eamma_native_geometry_late_probe_us, 0, "eamma",
+                     "Native renderer dev aid (A9): after the frame-end refresh, wait this many microseconds and "
+                     "hash the refreshed buffers again; logs how many changed meanwhile (job threads still writing "
+                     "after Present). Stalls every frame by that long; 0 = off");
 REXCVAR_DEFINE_BOOL(eamma_native_check_geometry, false, "eamma",
                     "Native renderer dev aid (NR-P4): hash each buffer the trusted path would not "
                     "look at, and log what it would have missed; also logs every buffer that "
@@ -120,6 +126,9 @@ struct LateCopy {
   u64 epoch;
 };
 std::vector<LateCopy> g_late;
+// Host-buffer (untracked) copies made for buffers that were rewritten before, by reason; logged with the late fix.
+u64 g_untracked_big = 0, g_untracked_stale = 0, g_untracked_other = 0, g_untracked_first = 0;
+u32 g_untracked_max_size = 0;
 
 // The path before NR-P4 (spot checks every use, no front table) unless eamma_native_geom_trust is on;
 // eamma_native_off bit 32 wins over the cvar.
@@ -417,6 +426,17 @@ bool ResolveLocked(u32 address, u32 size, u32 endian, bool index, u64 frame,
     }
   }
   if (!fresh_ring.ref) {
+    if (same_kind && hash != m.hash && m.rewritten_frame == frame && !late_tracked) {
+      if (size > kMaxRingBytes)
+        ++g_untracked_big;
+      else
+        ++g_untracked_other;
+      g_untracked_max_size = std::max(g_untracked_max_size, size);
+    } else if (same_kind && m.rewritten_frame != 0 && !late_tracked) {
+      ++g_untracked_stale;  // rewritten long ago, same or new content now: a copy the refresh won't see
+    } else if (!same_kind && m.has_content) {
+      ++g_untracked_first;  // endian/kind change
+    }
     fresh = CreateCopy(src, size, endian, index);
     SvrPerfCount(SvrCount::kGeomNewBuffers, 1);
     SvrPerfCount(SvrCount::kGeomNewBytes, size);
@@ -639,10 +659,34 @@ void SvrGeometryLateFixup() {
     s_fixed_bytes += c.size;
   }
   g_late.clear();
+  static const int probe_us = REXCVAR_GET(eamma_native_geometry_late_probe_us);
+  static u64 s_probed = 0, s_probe_changed = 0;
+  if (probe_us > 0) {
+    const auto until = std::chrono::steady_clock::now() + std::chrono::microseconds(probe_us);
+    while (std::chrono::steady_clock::now() < until)
+      std::this_thread::yield();
+    for (const Final &f : done) {
+      const u8 *src = GpuMemory(u32(f.key >> 32), u32(f.key));
+      if (!src)
+        continue;
+      ++s_probed;
+      if (XXH3_64bits(src, u32(f.key)) != f.hash)
+        ++s_probe_changed;
+    }
+  }
   if (++s_frames % 600 == 0) {
     BD_INFO("geometry late fix: {} of {} dynamic copies refreshed at frame end in the last 600 frames ({} KB)",
             s_fixed, s_checked, s_fixed_bytes / 1024);
+    BD_INFO("geometry untracked copies of rewritten buffers: over 4 MB {}, other {}, idle > {} frames {}, kind "
+            "change {}; largest {} KB", g_untracked_big, g_untracked_other, kVolatileFrames, g_untracked_stale,
+            g_untracked_first, g_untracked_max_size / 1024);
+    g_untracked_big = g_untracked_other = g_untracked_stale = g_untracked_first = 0;
+    g_untracked_max_size = 0;
+    if (probe_us > 0)
+      BD_INFO("geometry late probe: {} of {} buffers changed within {} us after the frame-end refresh",
+              s_probe_changed, s_probed, probe_us);
     s_fixed = s_checked = s_fixed_bytes = 0;
+    s_probed = s_probe_changed = 0;
   }
 }
 

@@ -123,6 +123,12 @@ step you touch. The user wants work to continue step to step without asking for 
   untracked host buffer, and the next change counted as the first (changes < 2, untracked again). Now any buffer
   rewritten in the last 60 frames always takes a tracked ring copy (`late_tracked`, ufc_geometry.cpp). Run g5: geometry
   late fix 2205-4864 refreshed per 600 frames (g4: 814), fight 48.8 presents/s, burst frames clean. User play test pending.
+  User: "way less issues" on that build. Then runs g6/g7 with `tools/selftest_scripts/fight_burst.txt` (boot taps up to
+  42 s, then stick + strikes, no START: the old script paused the fight every 4 s): probe
+  `eamma_native_geometry_late_probe_us=2000` found 0 of ~80k refreshed buffers changing in the 2 ms after the refresh (the
+  jobs finish before Present), and the new per-600-frame line "geometry untracked copies of rewritten buffers" is 0 in
+  the fight (one idle case per minute). Known holes left: a mesh idle > 60 frames whose first use in a frame comes before
+  the job writes it (one stale frame when it starts moving, e.g. the referee at the introductions); constants were not probed.
 
 ### In flight
 - Nothing queued on the laptop. The build in out/build has all of the above.
