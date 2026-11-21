@@ -146,4 +146,8 @@ ConstantAllocation UploadHostBytes(const void *host_data, u32 size,
 ConstantAllocation AllocateUploadBytes(u32 size, u32 alignment = 4);
 u64 UploadEpoch();
 
+// eamma_native_constant_late_fix: re-read this frame's pointer-loaded constants and refresh the uploads
+// whose guest source changed after the draw. Call at Present before the frame's list is closed.
+void ConstantLateFixup();
+
 } // namespace bd::gpu

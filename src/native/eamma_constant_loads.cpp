@@ -31,9 +31,15 @@
 namespace {
 struct ConstantLoad {
   u32 device, type, start, data, count;
+  bool pointer;  // GpuLoadShaderConstantF4Pointer: the GPU reads `data` when it runs the packet
 };
 std::mutex g_mutex;
 std::vector<ConstantLoad> g_pending;
+// Guest address each device-block register was last loaded from by a pointer load (0 = not from
+// one), per stage; g_source_gen[stage] bumps whenever a register's source changes. Read by the
+// constant upload on the drawing thread right after EammaApplyConstantLoads (same thread).
+unsigned int g_source[2][256];
+unsigned int g_source_gen[2] = {1, 1};
 
 // Records pile up only when no native draw consumes them (another device, a stretch without
 // draws). The newest are the ones the next draw needs, so a full list drops its oldest quarter.
@@ -71,7 +77,24 @@ void EammaApplyConstantLoads(u32 device_guest) {
     // Both are big-endian guest floats: a straight copy.
     auto *dst = l.type == 0 ? &dev->vsFloatConstants[l.start][0] : &dev->psFloatConstants[l.start][0];
     std::memcpy(dst, src, size_t(count) * 16u);
+    bool moved = false;
+    for (u32 i = 0; i < count; ++i) {
+      const unsigned int va = l.pointer ? l.data + 16u * i : 0u;
+      moved |= g_source[l.type][l.start + i] != va;
+      g_source[l.type][l.start + i] = va;
+    }
+    if (moved)
+      ++g_source_gen[l.type];
   }
+}
+
+const unsigned int *EammaConstantSources(int stage, unsigned int *generation) {
+  if (stage < 0 || stage > 1) {
+    *generation = 0;
+    return nullptr;
+  }
+  *generation = g_source_gen[stage];
+  return g_source[stage];
 }
 
 #if defined(D3DDevice_GpuLoadShaderConstantF4Pointer)
@@ -83,7 +106,7 @@ extern "C" REX_FUNC(D3DDevice_GpuLoadShaderConstantF4Pointer) {
       REXLOG_INFO("native: constant load {} c{} x{} from {:08X}", ctx.r4.u32 ? "PS" : "VS", ctx.r5.u32,
                   ctx.r7.u32, ctx.r6.u32);
     std::lock_guard lock(g_mutex);
-    PushLoad({ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32});
+    PushLoad({ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32, ctx.r7.u32, true});
   }
   __imp__D3DDevice_GpuLoadShaderConstantF4Pointer(ctx, base);
 }
@@ -100,7 +123,7 @@ extern "C" REX_FUNC(D3DDevice_GpuBeginShaderConstantF4) {
     if (s_logs.fetch_add(1, std::memory_order_relaxed) < 4)
       REXLOG_INFO("native: constant ring write {} c{} x{} at {:08X}", type ? "PS" : "VS", start, count, data);
     std::lock_guard lock(g_mutex);
-    PushLoad({dev, type, start, data, count});
+    PushLoad({dev, type, start, data, count, false});
   }
 }
 #endif

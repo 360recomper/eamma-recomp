@@ -111,6 +111,13 @@ step you touch. The user wants work to continue step to step without asking for 
   copies refreshed per 600 frames, no torn body seen at thumbnail size. User confirmation still pending. If it
   persists: (a) copies made on the static-buffer path (first two changes, or over 4 MB) are not tracked, (b) resolve
   write-backs still send the list mid-frame, (c) it may be a different bug: get a burst of the exact scene.
+  **Third round (2026-11-21; the user still saw parts jumping/detaching, constantly):** the same timing gap exists for the
+  shader constants the game loads from memory (GpuLoadShaderConstantF4Pointer: per-object matrices and bone palettes; the
+  GPU reads them when it runs the draw). Run g4: in menus 0 changed after the draw, in the fight 31188 of 251967 uploads
+  (~152 registers each) changed between the draw and Present. Fix: `ConstantLateFixup` (constant_buffers.cpp, called from
+  Present after the geometry fix) re-reads them and refreshes the upload; cvar `eamma_native_constant_late_fix` (true).
+  Burst frames look normal; stills can't show a twitch, user play test pending. Unknown: whether the refreshed content is
+  frame N's final matrices or frame N+1's written early (if the game single-buffers them).
 
 ### In flight
 - Nothing queued on the laptop. The build in out/build has all of the above.

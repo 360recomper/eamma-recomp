@@ -37,12 +37,19 @@
 #include "gpu/sampler_cache.h"
 #include "gpu/settings.h"
 #include "gpu/shaders/shader_cache.h"
+#include "ufc_native.h"
 
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
 #endif
 
 REXCVAR_DECLARE(i32, eamma_native_off);
+REXCVAR_DEFINE_BOOL(eamma_native_constant_late_fix, true, "eamma",
+                    "Native renderer: at the end of a frame, read the shader constants the game loads from memory "
+                    "(GpuLoadShaderConstantF4Pointer: c156..c187, the per-object matrices) again and refresh the "
+                    "uploads whose source changed after the draw. The console GPU reads that memory when it runs "
+                    "the draw, after the game's job threads have finished the frame's animation; a copy taken at "
+                    "the draw can hold an older matrix (body parts jumping or detaching). false = copy at the draw only");
 REXCVAR_DEFINE_BOOL(eamma_native_check_constants, false, "eamma",
                     "Native renderer dev check: fill the constant registers a shader doesn't declare "
                     "with 1e9 (a shader reading one shows garbage), and rebuild all texture slots "
@@ -117,6 +124,7 @@ struct StageConstantCache {
   u64 boundMask[4] = {};
   bool valid = false;
   bool pinned = false;
+  unsigned int sourceGen = 0;  // EammaConstantSources generation the bound upload was made under
 };
 
 // Set by whoever changes what a texture slot resolves to, taken by UploadSharedConstants.
@@ -426,13 +434,53 @@ const GuestConstantUse &ShaderRegisters(const GuestShader *shader) {
   return shader->constantUse;
 }
 
+// eamma_native_constant_late_fix: this frame's uploads of pointer-loaded registers. A run is `count`
+// registers read from guest `va` into upload bytes `dst`; raw[raw_off..] holds the guest bytes it was made from.
+struct LateConstRun {
+  u8 *dst;
+  u32 va, count, raw_off;
+  u64 epoch;
+};
+std::mutex g_late_const_mutex;
+std::vector<LateConstRun> g_late_const;
+std::vector<u8> g_late_const_raw;
+
+void NoteLateConstants(int stage, u8 *alloc_memory, const GuestConstantUse &use, u64 epoch) {
+  unsigned int gen = 0;
+  const unsigned int *src = ::EammaConstantSources(stage, &gen);
+  if (!src)
+    return;
+  std::lock_guard lock(g_late_const_mutex);
+  if (g_late_const.size() >= 65536)
+    return;
+  for (u32 r = 0; r < use.rangeCount; ++r) {
+    const u32 first = use.ranges[r].first, end = first + use.ranges[r].count;
+    for (u32 i = first; i < end;) {
+      if (!src[i]) {
+        ++i;
+        continue;
+      }
+      u32 n = 1;
+      while (i + n < end && src[i + n] == src[i] + 16u * n)
+        ++n;
+      const auto *guest = bd::mem::at<const u8>(src[i]);
+      if (guest) {
+        const u32 raw_off = u32(g_late_const_raw.size());
+        g_late_const_raw.insert(g_late_const_raw.end(), guest, guest + n * 16u);
+        g_late_const.push_back({alloc_memory + i * 16u, src[i], n, raw_off, epoch});
+      }
+      i += n;
+    }
+  }
+}
+
 // True when every register the shader reads is in the bound upload with the value the guest
 // holds now, so the caller keeps that binding.
 // (The D3D runtime's own dirty masks, m_Mask[0]/[1], can't replace this compare: over a match
 // about 1.3% of draws had new constants with the mask clean.)
 bool BoundUploadStillGood(const StageConstantCache &cache, const u8 *src,
-                          const GuestConstantUse &use, bool pinned) {
-  if (!cache.valid || cache.pinned != pinned)
+                          const GuestConstantUse &use, bool pinned, unsigned int source_gen) {
+  if (!cache.valid || cache.pinned != pinned || cache.sourceGen != source_gen)
     return false;
   for (u32 i = 0; i < 4; ++i) {
     if (use.mask[i] & ~cache.boundMask[i])
@@ -449,13 +497,19 @@ bool BoundUploadStillGood(const StageConstantCache &cache, const u8 *src,
 // Stores only the registers in use. The bound range still spans registers 0..registerEnd: the
 // shader's cbuffer has them at those offsets, it just never reads the ones left out.
 ConstantAllocation UploadStageConstants(UploadState &s, StageConstantCache &cache, u32 va,
-                                        const GuestConstantUse &use, bool pinned) {
+                                        const GuestConstantUse &use, bool pinned, int stage) {
   const auto *src = bd::mem::at<const u8>(va);
   if (!src) {
     cache.valid = false;
     return {};
   }
-  if (BoundUploadStillGood(cache, src, use, pinned))
+  // A register now loaded from another address with the same bytes still needs its own upload:
+  // the frame-end refresh reads each upload's own source.
+  static const bool late_fix = REXCVAR_GET(eamma_native_constant_late_fix);
+  unsigned int source_gen = 0;
+  if (late_fix)
+    ::EammaConstantSources(stage, &source_gen);
+  if (BoundUploadStillGood(cache, src, use, pinned, source_gen))
     return {};
   const bool poison = REXCVAR_GET(eamma_native_check_constants);
   const u32 bytes = poison ? kConstantBlockBytes : std::max<u32>(use.registerEnd, 1) * 16;
@@ -477,6 +531,9 @@ ConstantAllocation UploadStageConstants(UploadState &s, StageConstantCache &cach
   std::memcpy(cache.boundMask, use.mask, sizeof(cache.boundMask));
   cache.pinned = pinned;
   cache.valid = true;
+  cache.sourceGen = source_gen;
+  if (late_fix)
+    NoteLateConstants(stage, alloc.memory, use, s.epoch);
   SvrPerfCount(SvrCount::kCbBlocks, 1);
   SvrPerfCount(SvrCount::kCbRegisters, registers);
   return alloc;
@@ -495,7 +552,7 @@ ConstantAllocation UploadVertexShaderConstants(u32 device_guest) {
     return {};
   const u32 va = device_guest + offsetof(D3DDevice, vsFloatConstants);
   return UploadStageConstants(s, s.vsConstants, va,
-                              ShaderRegisters(bd::gpu::state().pipelineState.vertexShader), false);
+                              ShaderRegisters(bd::gpu::state().pipelineState.vertexShader), false, 0);
 }
 
 ConstantAllocation UploadPixelShaderConstants(u32 device_guest) {
@@ -517,7 +574,7 @@ ConstantAllocation UploadPixelShaderConstants(u32 device_guest) {
                         (skin_hash == 0xE3E6BFE1E3027967ull || skin_hash == 0x9AAE805CC82A2634ull ||
                          skin_hash == 0x8F1C444E64B0346Aull || skin_hash == 0x3C773B6F2734378Full ||
                          skin_hash == 0x2F2A0C6C63D67480ull);
-  auto alloc = UploadStageConstants(s, s.psConstants, va, use, pinned || no_hdlig);
+  auto alloc = UploadStageConstants(s, s.psConstants, va, use, pinned || no_hdlig, 1);
   if (alloc.memory)
     PinScreenUVScaleReg(alloc.memory);
   if (alloc.memory && no_hdlig) {
@@ -961,5 +1018,31 @@ ConstantAllocation AllocateUploadBytes(u32 size, u32 alignment) {
 }
 
 u64 UploadEpoch() { return upload_state().epoch; }
+
+void ConstantLateFixup() {
+  std::lock_guard lock(g_late_const_mutex);
+  static u64 s_frames = 0, s_runs = 0, s_fixed = 0, s_fixed_regs = 0;
+  const u64 epoch = upload_state().epoch;
+  for (const LateConstRun &r : g_late_const) {
+    if (r.epoch != epoch)
+      continue;
+    const auto *guest = bd::mem::at<const u8>(r.va);
+    if (!guest)
+      continue;
+    ++s_runs;
+    if (std::memcmp(guest, g_late_const_raw.data() + r.raw_off, r.count * 16u) == 0)
+      continue;
+    CopyByteSwap32FlushNaN(r.dst, r.va, r.count * 16u);
+    ++s_fixed;
+    s_fixed_regs += r.count;
+  }
+  g_late_const.clear();
+  g_late_const_raw.clear();
+  if (++s_frames % 600 == 0) {
+    BD_INFO("constant late fix: {} of {} pointer-loaded constant runs refreshed at frame end in the last 600 "
+            "frames ({} registers)", s_fixed, s_runs, s_fixed_regs);
+    s_runs = s_fixed = s_fixed_regs = 0;
+  }
+}
 
 } // namespace bd::gpu

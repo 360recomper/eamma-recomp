@@ -479,6 +479,7 @@ void Video::Present(GuestTexture *frontBuffer) {
   SvrGpuTimeEnd(cur);
 #if defined(SVR_NATIVE_RENDERER)
   SvrGeometryLateFixup();  // before the GPU can read this frame's dynamic vertex copies
+  ConstantLateFixup();     // and the constants the game loads from memory (per-object matrices)
   SvrRecordingList(cur, s.command_lists[cur].get())->end();  // waits for threaded recording
 #else
   s.command_lists[cur]->end();
