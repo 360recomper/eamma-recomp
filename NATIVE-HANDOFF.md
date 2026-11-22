@@ -149,7 +149,8 @@ esults\<run>.
   shader A/B (cache rebuild 5 s; restore the normal cache after).
 
 ### In flight
-- Nothing queued on the laptop. The build in out/build has all of the above.
+- **Latest state and what is left: `HANDOFF-native-2026-11-22.md`** (A9 twitch fixed and confirmed; A10 eyes and A12 intro
+  lighting fixed by 8ffe557, awaiting the user's play test). Nothing queued on the laptop. The build in out/build matches HEAD.
 
 ### Next command to type
 1. WP1 remainder, then WP5. Reference run (2x, all diagnostics):
