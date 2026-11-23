@@ -1,7 +1,7 @@
 # EA Sports MMA recomp
 
 Static recompilation of EA Sports MMA (Xbox 360, title 454108FC) with ReXGlue SDK v0.10, bootstrapped
-from the UFC Undisputed 3 recomp. Local repo only: no remote, never pushed.
+from the UFC Undisputed 3 recomp. Hosted at github.com/360recomper/eamma-recomp (private). Test the native renderer with `play-native.bat`; report bugs as issues.
 
 No game files are included. `assets\` is a junction to the disc extract `E:\ClaudeGame\EAMMA-extract`.
 Do not delete or clean through it recursively: it is the only copy.
